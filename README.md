@@ -1,11 +1,9 @@
 # Personal-Project-Matcher
-A platform for STEM students who have project ideas but lack a team 
-or mentor. Users can post their project idea, list their skills, and get matched 
-with other students who have complementary skills or mentors who want to advise 
-good ideas.
+A platform for STEM students who have project ideas but lack a team of people who are on the same wavelength about the project idea. Users can post their basic project ideas on the platform, list their skills, and get matched 
+with other students who have complementary skills basede on gemini recommendations. 
 - User creates a profile (skills, interests, what they're looking for)
-- User posts a project idea with a title, description, and required skills
-- Filters
+- User posts a project idea with a title, detailed profound description, and required skills that they are looking for in the project. 
+- Filters for ensuring what projects we can see outisde our default that will auto update (computer science person can choose to addd a filter for health science research proups)
 - Feed showing available projects and people
 
   When matching, prioritize:
@@ -15,10 +13,11 @@ good ideas.
 4. Experience level compatibility (don't pair a complete beginner solo with an advanced project)
 
 Profile:
-  - FirstName, LastName, Age, Gender, Email, Discord, GitHub Profile, Linkden/Personal Profile, Linguistic Language. 
+  - FirstName, LastName, Email, Linguistic Language. 
+  - URLs: Discord, GitHub Profile, Linkden/Personal Profile.
   - Your Major and field of interest, the one that has the default view for the home page
   - Interests that is there in the type of project or hobbies
-  - A score of the profile (when the request is there for the project owner) that only the owner can see, a side bar that is visible only to the owner.
+  - A score of the matching (when the request is there for the project owner) that only the owner can see, a side bar that is visible only to the owner.
   - Avaliablity (work hours per week), include days and times for the calender and gemini to sort and come up with times. 
 
 ## Databases:
