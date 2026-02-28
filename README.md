@@ -13,3 +13,10 @@ good ideas.
 2. Shared interest in the project domain (e.g. AI, web dev, hardware, research)
 3. Availability and commitment level alignment
 4. Experience level compatibility (don't pair a complete beginner solo with an advanced project)
+
+Profile:
+  - FirstName, LastName, Age, Gender, Email, Discord, GitHub Profile, Linkden/Personal Profile, Linguistic Language. 
+  - Your Major and field of interest, the one that has the default view for the home page
+  - Interests that is there in the type of project or hobbies
+  - A score of the profile (when the request is there for the project owner) that only the owner can see, a side bar that is visible only to the owner.
+  - Avaliablity (work hours per week), include days and times for the calender and gemini to sort and come up with times. 
