@@ -20,3 +20,20 @@ Profile:
   - Interests that is there in the type of project or hobbies
   - A score of the profile (when the request is there for the project owner) that only the owner can see, a side bar that is visible only to the owner.
   - Avaliablity (work hours per week), include days and times for the calender and gemini to sort and come up with times. 
+
+## Databases:
+Profile Database:
+Major
+Research and/or Projects
+Availability
+Work hour per week
+URLs - (Portfolios and LinkedIn, etc.)
+Interests
+Skills
+Experience Level
+Preferred Language
+
+Project Database:
+Title
+Description
+Tags - filtering by tags
