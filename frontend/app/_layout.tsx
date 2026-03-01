@@ -24,7 +24,6 @@ export default function RootLayout() {
           <Stack.Screen name="signup-step2" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="create-profile" />
-          <Stack.Screen name="profile" options={{ headerShown: true, title: 'Profile' }} />
           <Stack.Screen name="notifications" options={{ headerShown: false, title: 'Notifications' }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
