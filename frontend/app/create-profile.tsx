@@ -81,11 +81,16 @@ export default function CreateProfile() {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
+        base64: true, // Get base64 for persistence
       });
 
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        setProfileImage(asset.uri);
+        // Use base64 for display to ensure image persists during form interaction
+        const imageUri = asset.base64 
+          ? `data:image/jpeg;base64,${asset.base64}`
+          : asset.uri;
+        setProfileImage(imageUri);
         setImageFile(asset);
       }
     } catch (error) {
@@ -209,7 +214,7 @@ export default function CreateProfile() {
       console.log('Profile created:', createdProfile);
 
       Alert.alert('Success!', 'Your profile has been created. Welcome to Project Jekyll & Hyde!', [
-        { text: 'OK', onPress: () => router.replace('/(tabs)') }
+        { text: 'OK', onPress: () => router.replace('/') }
       ]);
 
     } catch (error: any) {
