@@ -167,17 +167,17 @@ export default function ProjectDetailScreen() {
 
   return (
     <View style={styles.mainContainer}>
-      {/* Header */}
-      <View style={styles.header}>
+      {/* Green Header Bar */}
+      <View style={styles.headerBar}>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.headerBackButton}
           onPress={() => router.back()}
           activeOpacity={0.7}
         >
           <IconSymbol size={24} name="chevron.left" color="#fff" />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push('/(tabs)')}>
-          <Text style={styles.headerTitle}>Projects Matcher</Text>
+          <Text style={styles.headerTitle}>Project Details</Text>
         </TouchableOpacity>
         <View style={{ width: 44 }} />
       </View>
@@ -445,34 +445,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#e6f7ed',
   },
-  header: {
+  headerBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#e6f7ed',
-    borderBottomWidth: 2,
-    borderBottomColor: '#a7f3d0',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#10B981',
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#10B981',
-    letterSpacing: -1,
-  },
-  backButton: {
+  headerBackButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
-    backgroundColor: '#10B981',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
   },
   container: {
     flex: 1,
