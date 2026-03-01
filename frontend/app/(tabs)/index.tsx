@@ -99,7 +99,10 @@ export default function HomeScreen() {
               </ThemedText>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => router.push('/post')}
+            >
               <ThemedText style={styles.actionEmoji}>💡</ThemedText>
               <ThemedText type="defaultSemiBold" style={styles.actionTitle}>
                 Post a Project Idea
@@ -109,7 +112,10 @@ export default function HomeScreen() {
               </ThemedText>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => router.push('/explore')}
+            >
               <ThemedText style={styles.actionEmoji}>🔍</ThemedText>
               <ThemedText type="defaultSemiBold" style={styles.actionTitle}>
                 Find Matches
