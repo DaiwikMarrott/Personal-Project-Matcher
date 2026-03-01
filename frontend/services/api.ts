@@ -3,7 +3,8 @@
  * Handles all communication with the FastAPI backend
  */
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+console.log('[API] API_BASE_URL initialized:', API_BASE_URL);
 
 interface ApiResponse<T> {
   data?: T;
@@ -96,6 +97,31 @@ export async function uploadAvatar(userId: string, file: Blob): Promise<ApiRespo
     if (!response.ok) {
       const error = await response.json();
       return { error: error.detail || 'Failed to upload avatar' };
+    }
+
+    const data = await response.json();
+    return { data };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Upload project image
+ */
+export async function uploadProjectImage(userId: string, file: Blob): Promise<ApiResponse<{ url: string }>> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${API_BASE_URL}/upload-project-image/${userId}`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to upload project image' };
     }
 
     const data = await response.json();
@@ -396,6 +422,134 @@ export async function deleteProject(
     if (!response.ok) {
       const error = await response.json();
       return { error: error.detail || 'Failed to delete project' };
+    }
+
+    const data = await response.json();
+    return { data };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Notification types
+ */
+export interface Notification {
+  id: string;
+  recipient_id: string;
+  sender_id: string;
+  project_id?: string;
+  notification_type: string;
+  message?: string;
+  read: boolean;
+  created_at: string;
+  sender_first_name?: string;
+  sender_last_name?: string;
+  sender_profile_picture_url?: string;
+  sender_skills?: string[];
+  sender_interests?: string;
+  sender_experience_level?: string;
+  project_title?: string;
+}
+
+/**
+ * Express interest in a project
+ */
+export async function expressInterest(
+  projectId: string,
+  senderId: string,
+  message?: string
+): Promise<ApiResponse<{ success: boolean; message: string; notification: Notification }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/project/${projectId}/express-interest`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        sender_id: senderId,
+        message: message || ''
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to express interest' };
+    }
+
+    const data = await response.json();
+    return { data };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Get notifications for a user
+ */
+export async function getNotifications(
+  profileId: string,
+  unreadOnly: boolean = false
+): Promise<ApiResponse<{ notifications: Notification[]; count: number }>> {
+  try {
+    const url = `${API_BASE_URL}/notifications/${profileId}${unreadOnly ? '?unread_only=true' : ''}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to fetch notifications' };
+    }
+
+    const data = await response.json();
+    return { data };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Mark a notification as read
+ */
+export async function markNotificationRead(
+  notificationId: string
+): Promise<ApiResponse<{ success: boolean; notification: Notification }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/notifications/${notificationId}/read`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to mark notification as read' };
+    }
+
+    const data = await response.json();
+    return { data };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Mark all notifications as read for a user
+ */
+export async function markAllNotificationsRead(
+  profileId: string
+): Promise<ApiResponse<{ success: boolean; message: string }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/notifications/${profileId}/mark-all-read`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to mark all notifications as read' };
     }
 
     const data = await response.json();

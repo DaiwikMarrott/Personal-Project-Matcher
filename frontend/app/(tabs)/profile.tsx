@@ -1,11 +1,13 @@
 /**
  * Profile Tab Screen
- * View user profile with skills, projects, and settings
+ * View and edit user profile — combined in one screen
  */
+import React, { useState, useCallback } from 'react';
 import {
   StyleSheet,
   View,
   Text,
+  TextInput,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
@@ -17,9 +19,15 @@ import {
 } from 'react-native';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+  Alert,
+  Platform,
+} from 'react-native';
+import { useAuth, supabase } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { getProjects } from '@/services/api';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
+import { getProjects, API_BASE_URL } from '@/services/api';
+import { EXPERIENCE_LEVELS, MAJORS } from '@/constants/app-constants';
 
 const API_URL = Platform.OS === 'web' 
   ? 'http://localhost:8000' 
@@ -66,6 +74,30 @@ export default function ProfileTabScreen() {
       rotationAnimation.stopAnimation();
     };
   }, [user]);
+  const [showClosedProjects, setShowClosedProjects] = useState(false);
+
+  // Edit form state
+  const [isEditing, setIsEditing] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [major, setMajor] = useState('');
+  const [experienceLevel, setExperienceLevel] = useState('beginner');
+  const [skills, setSkills] = useState('');
+  const [interests, setInterests] = useState('');
+  const [githubUrl, setGithubUrl] = useState('');
+  const [linkedinUrl, setLinkedinUrl] = useState('');
+  const [profileImage, setProfileImage] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [showMajorPicker, setShowMajorPicker] = useState(false);
+  const [showExperiencePicker, setShowExperiencePicker] = useState(false);
+
+  // Reload profile data when screen comes into focus (to reflect status changes)
+  useFocusEffect(
+    useCallback(() => {
+      loadProfileData();
+    }, [user])
+  );
 
   const loadProfileData = async () => {
     if (!user) {
@@ -78,11 +110,23 @@ export default function ProfileTabScreen() {
       const { exists, profile: userProfile } = await checkProfileExists(user.id);
       
       if (!exists || !userProfile) {
-        router.replace('/create-profile');
+        console.log('[ProfileTab] No profile found');
+        setLoading(false);
         return;
       }
 
       setProfile(userProfile);
+
+      // Populate edit form fields
+      setFirstName(userProfile.first_name || '');
+      setLastName(userProfile.last_name || '');
+      setMajor(userProfile.major || '');
+      setExperienceLevel(userProfile.experience_level || 'beginner');
+      setSkills(userProfile.skills ? userProfile.skills.join(', ') : '');
+      setInterests(userProfile.interests || '');
+      setGithubUrl(userProfile.urls?.github || '');
+      setLinkedinUrl(userProfile.urls?.linkedin || '');
+      setProfileImage(userProfile.profile_picture_url || null);
 
       // Load user's projects
       const result = await getProjects({ limit: 50 });
@@ -366,8 +410,103 @@ export default function ProfileTabScreen() {
   };
 
   const openURL = (url: string) => {
-    if (url) {
-      Linking.openURL(url);
+    if (url) Linking.openURL(url);
+  };
+
+  // ─── Edit helpers ──────────────────────────────────────────────────────────
+
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setProfileImage(asset.uri);
+        setImageFile(asset);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+
+  const uploadProfilePicture = async (): Promise<string | null> => {
+    if (!imageFile || !user) return profileImage;
+    try {
+      const formData = new FormData();
+      if (Platform.OS === 'web') {
+        const response = await fetch(imageFile.uri);
+        const blob = await response.blob();
+        formData.append('file', new File([blob], 'avatar.jpg', { type: 'image/jpeg' }));
+      } else {
+        formData.append('file', { uri: imageFile.uri, type: 'image/jpeg', name: 'avatar.jpg' } as any);
+      }
+      const uploadResponse = await fetch(`${API_BASE_URL}/upload-avatar/${user.id}`, { method: 'POST', body: formData });
+      if (!uploadResponse.ok) throw new Error('Upload failed');
+      const data = await uploadResponse.json();
+      return data.url;
+    } catch {
+      return profileImage;
+    }
+  };
+
+  const handleSave = async () => {
+    if (!firstName.trim() || !lastName.trim() || !major) {
+      Alert.alert('Required fields', 'Please fill in your first name, last name, and major.');
+      return;
+    }
+    setSaving(true);
+    try {
+      let newProfilePictureUrl = profileImage;
+      if (imageFile) newProfilePictureUrl = await uploadProfilePicture();
+
+      const skillsArray = skills.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      const urls: Record<string, string> = {};
+      if (githubUrl.trim()) urls.github = githubUrl.trim();
+      if (linkedinUrl.trim()) urls.linkedin = linkedinUrl.trim();
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          major,
+          experience_level: experienceLevel,
+          skills: skillsArray,
+          interests: interests.trim() || null,
+          urls,
+          profile_picture_url: newProfilePictureUrl,
+        })
+        .eq('auth_user_id', user?.id);
+
+      if (error) throw error;
+
+      setIsEditing(false);
+      setImageFile(null);
+      await loadProfileData();
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update profile.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cancelEdit = () => {
+    setIsEditing(false);
+    setImageFile(null);
+    if (profile) {
+      setFirstName(profile.first_name || '');
+      setLastName(profile.last_name || '');
+      setMajor(profile.major || '');
+      setExperienceLevel(profile.experience_level || 'beginner');
+      setSkills(profile.skills ? profile.skills.join(', ') : '');
+      setInterests(profile.interests || '');
+      setGithubUrl(profile.urls?.github || '');
+      setLinkedinUrl(profile.urls?.linkedin || '');
+      setProfileImage(profile.profile_picture_url || null);
     }
   };
 
@@ -383,35 +522,121 @@ export default function ProfileTabScreen() {
     return (
       <View style={styles.emptyContainer}>
         <Text style={styles.emptyText}>Profile not found</Text>
+        <Text style={styles.emptySubtext}>Please restart the app</Text>
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.push('/create-profile')}
+          onPress={handleLogout}
         >
-          <Text style={styles.buttonText}>Create Profile</Text>
+          <Text style={styles.buttonText}>Sign Out</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  // ─── Edit mode ─────────────────────────────────────────────────────────────
+  if (isEditing) {
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.editContent}>
+        {/* Profile Picture */}
+        <View style={styles.editImageSection}>
+          <TouchableOpacity onPress={pickImage} style={styles.editImageContainer}>
+            {profileImage ? (
+              <Image source={{ uri: profileImage }} style={styles.editProfileImage} />
+            ) : (
+              <View style={styles.editPlaceholderImage}>
+                <Text style={styles.editPlaceholderText}>
+                  {firstName && lastName ? `${firstName[0]}${lastName[0]}` : '👤'}
+                </Text>
+              </View>
+            )}
+            <View style={styles.editImageBadge}><Text>📷</Text></View>
+          </TouchableOpacity>
+          <Text style={styles.imageHint}>Tap to change picture</Text>
+        </View>
+
+        {/* Basic Information */}
+        <View style={styles.editSection}>
+          <Text style={styles.editSectionTitle}>Basic Information</Text>
+
+          <Text style={styles.editLabel}>First Name</Text>
+          <TextInput style={styles.editInput} value={firstName} onChangeText={setFirstName}
+            placeholder="John" placeholderTextColor="#999" autoCapitalize="words" />
+
+          <Text style={styles.editLabel}>Last Name</Text>
+          <TextInput style={styles.editInput} value={lastName} onChangeText={setLastName}
+            placeholder="Doe" placeholderTextColor="#999" autoCapitalize="words" />
+
+          <Text style={styles.editLabel}>Email</Text>
+          <TextInput style={[styles.editInput, styles.editInputDisabled]} value={user?.email || ''} editable={false} />
+
+          <Text style={styles.editLabel}>Major</Text>
+          <TouchableOpacity style={styles.pickerButton} onPress={() => setShowMajorPicker(!showMajorPicker)}>
+            <Text style={major ? styles.pickerText : styles.pickerPlaceholder}>{major || 'Select your major'}</Text>
+          </TouchableOpacity>
+          {showMajorPicker && (
+            <ScrollView style={styles.pickerContainer} nestedScrollEnabled>
+              {MAJORS.map((m) => (
+                <TouchableOpacity key={m} style={styles.pickerItem} onPress={() => { setMajor(m); setShowMajorPicker(false); }}>
+                  <Text style={styles.pickerItemText}>{m}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* Additional Information */}
+        <View style={styles.editSection}>
+          <Text style={styles.editSectionTitle}>Additional Information</Text>
+
+          <Text style={styles.editLabel}>Experience Level</Text>
+          <TouchableOpacity style={styles.pickerButton} onPress={() => setShowExperiencePicker(!showExperiencePicker)}>
+            <Text style={styles.pickerText}>{experienceLevel.charAt(0).toUpperCase() + experienceLevel.slice(1)}</Text>
+          </TouchableOpacity>
+          {showExperiencePicker && (
+            <ScrollView style={styles.pickerContainer} nestedScrollEnabled>
+              {EXPERIENCE_LEVELS.map((level) => (
+                <TouchableOpacity key={level} style={styles.pickerItem} onPress={() => { setExperienceLevel(level); setShowExperiencePicker(false); }}>
+                  <Text style={styles.pickerItemText}>{level.charAt(0).toUpperCase() + level.slice(1)}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          <Text style={styles.editLabel}>Skills</Text>
+          <TextInput style={styles.editInput} value={skills} onChangeText={setSkills}
+            placeholder="Python, JavaScript, React (comma-separated)" placeholderTextColor="#999" multiline />
+
+          <Text style={styles.editLabel}>Interests</Text>
+          <TextInput style={[styles.editInput, styles.editTextArea]} value={interests} onChangeText={setInterests}
+            placeholder="What are you passionate about?" placeholderTextColor="#999" multiline numberOfLines={3} />
+
+          <Text style={styles.editLabel}>GitHub URL</Text>
+          <TextInput style={styles.editInput} value={githubUrl} onChangeText={setGithubUrl}
+            placeholder="https://github.com/yourusername" placeholderTextColor="#999" autoCapitalize="none" keyboardType="url" />
+
+          <Text style={styles.editLabel}>LinkedIn URL</Text>
+          <TextInput style={styles.editInput} value={linkedinUrl} onChangeText={setLinkedinUrl}
+            placeholder="https://linkedin.com/in/yourusername" placeholderTextColor="#999" autoCapitalize="none" keyboardType="url" />
+        </View>
+
+        {/* Save / Cancel */}
+        <View style={styles.editButtonRow}>
+          <TouchableOpacity style={styles.cancelButton} onPress={cancelEdit}>
+            <Text style={styles.cancelButtonText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.saveButton, saving && styles.saveButtonDisabled]} onPress={handleSave} disabled={saving}>
+            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Save Changes</Text>}
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // ─── View mode ──────────────────────────────────────────────────────────────
   const initials = `${profile.first_name?.[0] || ''}${profile.last_name?.[0] || ''}`.toUpperCase();
 
   return (
     <View style={styles.container}>
-      {/* Green Header Bar */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity
-          style={styles.headerBackButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <IconSymbol size={24} name="chevron.left" color="#fff" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/(tabs)')}>
-          <Text style={styles.headerTitle}>Profile</Text>
-        </TouchableOpacity>
-        <View style={{ width: 44 }} />
-      </View>
-
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
 
       {/* Header Card */}
@@ -474,9 +699,9 @@ export default function ProfileTabScreen() {
 
         <TouchableOpacity
           style={styles.editButton}
-          onPress={() => router.push('/profile-edit')}
+          onPress={() => setIsEditing(true)}
         >
-          <Text style={styles.editButtonText}>Edit Profile</Text>
+          <Text style={styles.editButtonText}>✏️ Edit Profile</Text>
         </TouchableOpacity>
       </View>
 
@@ -556,47 +781,112 @@ export default function ProfileTabScreen() {
 
       {/* Projects Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>My Projects ({userProjects.length})</Text>
-        {userProjects.length === 0 ? (
-          <Text style={styles.emptyText}>No projects yet</Text>
+        {/* Open Projects */}
+        <Text style={styles.sectionTitle}>
+          Open Projects ({userProjects.filter(p => p.status === 'open' || !p.status).length})
+        </Text>
+        {userProjects.filter(p => p.status === 'open' || !p.status).length === 0 ? (
+          <Text style={styles.emptyText}>No open projects yet</Text>
         ) : (
           <View style={styles.projectList}>
-            {userProjects.map((project) => (
-              <TouchableOpacity
-                key={project.id}
-                style={styles.projectCard}
-                activeOpacity={0.7}
-                onPress={() => {
-                  router.push({
-                    pathname: '/project-detail',
-                    params: { projectData: JSON.stringify(project) },
-                  });
-                }}
-              >
-                {/* Project Image */}
-                <View style={styles.projectImageContainer}>
-                  {project.project_image_url ? (
-                    <Image
-                      source={{ uri: project.project_image_url }}
-                      style={styles.projectImage}
-                    />
-                  ) : (
-                    <View style={styles.projectImagePlaceholder}>
-                      <Text style={styles.projectImagePlaceholderText}>📁</Text>
+            {userProjects
+              .filter(p => p.status === 'open' || !p.status)
+              .map((project) => (
+                <TouchableOpacity
+                  key={project.id}
+                  style={styles.projectCard}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/project-detail',
+                      params: { projectData: JSON.stringify(project) },
+                    });
+                  }}
+                >
+                  {/* Project Image */}
+                  <View style={styles.projectImageContainer}>
+                    {project.project_image_url ? (
+                      <Image
+                        source={{ uri: project.project_image_url }}
+                        style={styles.projectImage}
+                      />
+                    ) : (
+                      <View style={styles.projectImagePlaceholder}>
+                        <Text style={styles.projectImagePlaceholderText}>📁</Text>
+                      </View>
+                    )}
+                  </View>
+                  
+                  {/* Project Info */}
+                  <View style={styles.projectInfo}>
+                    <Text style={styles.projectTitle}>{project.title}</Text>
+                    <View style={styles.openBadge}>
+                      <Text style={styles.openBadgeText}>🟢 Open</Text>
                     </View>
-                  )}
-                </View>
-                
-                {/* Project Info */}
-                <View style={styles.projectInfo}>
-                  <Text style={styles.projectTitle}>{project.title}</Text>
-                  <Text style={styles.projectStatus}>{project.status || 'open'}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+                  </View>
+                </TouchableOpacity>
+              ))}
           </View>
         )}
       </View>
+
+      {/* Closed Projects Section (Collapsible) */}
+      {userProjects.filter(p => p.status === 'closed').length > 0 && (
+        <View style={styles.section}>
+          <TouchableOpacity 
+            style={styles.closedProjectsHeader}
+            onPress={() => setShowClosedProjects(!showClosedProjects)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.closedProjectsTitle}>
+              Closed Projects ({userProjects.filter(p => p.status === 'closed').length})
+            </Text>
+            <Text style={styles.toggleIcon}>{showClosedProjects ? '▼' : '►'}</Text>
+          </TouchableOpacity>
+          
+          {showClosedProjects && (
+            <View style={styles.projectList}>
+              {userProjects
+                .filter(p => p.status === 'closed')
+                .map((project) => (
+                  <TouchableOpacity
+                    key={project.id}
+                    style={[styles.projectCard, styles.closedProjectCard]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      router.push({
+                        pathname: '/project-detail',
+                        params: { projectData: JSON.stringify(project) },
+                      });
+                    }}
+                  >
+                    {/* Project Image */}
+                    <View style={styles.projectImageContainer}>
+                      {project.project_image_url ? (
+                        <Image
+                          source={{ uri: project.project_image_url }}
+                          style={[styles.projectImage, styles.closedProjectImage]}
+                        />
+                      ) : (
+                        <View style={[styles.projectImagePlaceholder, styles.closedProjectImagePlaceholder]}>
+                          <Text style={styles.projectImagePlaceholderText}>📁</Text>
+                        </View>
+                      )}
+                    </View>
+                    
+                    {/* Project Info */}
+                    <View style={styles.projectInfo}>
+                      <Text style={styles.projectTitle}>{project.title}</Text>
+                      <View style={styles.closedBadge}>
+                        <Text style={styles.closedBadgeText}>🔴 Closed</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Logout Button */}
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
@@ -611,27 +901,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#e6f7ed',
-  },
-  headerBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#10B981',
-  },
-  headerBackButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
   },
   scrollView: {
     flex: 1,
@@ -943,15 +1212,58 @@ const styles = StyleSheet.create({
     color: '#1c1917',
     flex: 1,
   },
-  projectStatus: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#78716c',
-    textTransform: 'capitalize',
-    backgroundColor: '#e7e5e4',
+  openBadge: {
+    backgroundColor: '#d1fae5',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#6ee7b7',
+  },
+  openBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#065f46',
+  },
+  closedProjectsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  closedProjectsTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#78716c',
+  },
+  toggleIcon: {
+    fontSize: 16,
+    color: '#78716c',
+    fontWeight: '700',
+  },
+  closedProjectCard: {
+    opacity: 0.7,
+    borderColor: '#d6d3d1',
+  },
+  closedProjectImage: {
+    opacity: 0.6,
+  },
+  closedProjectImagePlaceholder: {
+    backgroundColor: '#e7e5e4',
+  },
+  closedBadge: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  closedBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#991b1b',
   },
   button: {
     backgroundColor: '#10B981',
@@ -972,6 +1284,13 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
   },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#a8a29e',
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 8,
+  },
   logoutButton: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderRadius: 16,
@@ -983,5 +1302,170 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#dc2626',
+  },
+
+  // ─── Edit mode styles ─────────────────────────────────────────────────────
+  editContent: {
+    padding: 20,
+    paddingBottom: 40,
+    maxWidth: 800,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  editImageSection: {
+    alignItems: 'center',
+    marginBottom: 24,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    padding: 24,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(167,243,208,0.5)',
+  },
+  editImageContainer: {
+    position: 'relative',
+    marginBottom: 12,
+  },
+  editProfileImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 4,
+    borderColor: '#10B981',
+  },
+  editPlaceholderImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#a7f3d0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editPlaceholderText: {
+    fontSize: 40,
+    color: '#065f46',
+    fontWeight: 'bold',
+  },
+  editImageBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#f59e0b',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#fff',
+  },
+  imageHint: {
+    fontSize: 13,
+    color: '#78716c',
+    textAlign: 'center',
+  },
+  editSection: {
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(167,243,208,0.5)',
+  },
+  editSectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1c1917',
+    marginBottom: 16,
+  },
+  editLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#57534e',
+    marginBottom: 8,
+    marginTop: 14,
+  },
+  editInput: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#d6d3d1',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    color: '#1c1917',
+  },
+  editInputDisabled: {
+    backgroundColor: '#f5f5f4',
+    color: '#78716c',
+  },
+  editTextArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  pickerButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#d6d3d1',
+    borderRadius: 12,
+    padding: 14,
+  },
+  pickerText: {
+    fontSize: 16,
+    color: '#1c1917',
+  },
+  pickerPlaceholder: {
+    fontSize: 16,
+    color: '#a8a29e',
+  },
+  pickerContainer: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#d6d3d1',
+    borderRadius: 12,
+    marginTop: 8,
+    maxHeight: 200,
+    zIndex: 1000,
+  },
+  pickerItem: {
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f4',
+  },
+  pickerItemText: {
+    fontSize: 16,
+    color: '#1c1917',
+  },
+  editButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#10B981',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: '#10B981',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: '#10B981',
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

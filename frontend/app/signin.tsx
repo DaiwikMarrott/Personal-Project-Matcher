@@ -1,6 +1,6 @@
 /**
  * Sign In Screen
- * Styled after collabb's design
+ * Matches Projects Matcher theme with green header
  */
 import { useState } from 'react';
 import {
@@ -17,15 +17,18 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function SignIn() {
   const router = useRouter();
-  const { signInWithEmail } = useAuth();
+  const { signInWithEmail, checkProfileExists } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSignIn = async () => {
+    console.log('Sign In button pressed');
+    
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
@@ -33,18 +36,37 @@ export default function SignIn() {
 
     setLoading(true);
     try {
+      console.log('Attempting sign in with:', email);
       await signInWithEmail(email, password);
-      // Auth context will handle navigation
+      console.log('Sign in successful! Navigating to home...');
+      
+      // Wait a moment for auth state to update
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Navigate to main app
+      router.replace('/(tabs)');
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to sign in');
-    } finally {
+      console.error('Sign in error:', error);
+      Alert.alert('Sign In Failed', error.message || 'Failed to sign in. Please check your credentials.');
       setLoading(false);
     }
   };
 
   return (
     <>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" />
+      {/* Green Header Bar */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Sign In</Text>
+        <View style={styles.backButton} />
+      </View>
+
       <View style={styles.container}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -107,6 +129,33 @@ export default function SignIn() {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#10B981',
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    paddingBottom: 15,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: '#e6f7ed',
