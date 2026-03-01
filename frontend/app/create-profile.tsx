@@ -1,6 +1,7 @@
 /**
  * Profile Creation Screen
  * Appears immediately after sign-up to collect user information
+ * Theme: Modern pastel green design
  */
 import React, { useState } from 'react';
 import {
@@ -18,6 +19,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useAuth, supabase } from '../contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
+import Colors from '@/constants/colors';
 
 const API_URL = Platform.OS === 'web' 
   ? 'http://localhost:8000' 
@@ -397,148 +399,170 @@ export default function CreateProfile() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
   },
   contentContainer: {
     padding: 20,
     paddingBottom: 40,
   },
   header: {
-    marginBottom: 30,
+    marginBottom: 32,
     alignItems: 'center',
+    marginTop: 8,
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: '#333',
+    color: Colors.text.primary,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: Colors.text.secondary,
   },
   imageSection: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 32,
+    backgroundColor: Colors.surface,
+    padding: 24,
+    borderRadius: 20,
+    shadowColor: Colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 2,
   },
   imageContainer: {
-    marginBottom: 10,
+    marginBottom: 12,
   },
   profileImage: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    borderWidth: 3,
-    borderColor: '#007AFF',
+    borderWidth: 4,
+    borderColor: Colors.primary,
   },
   placeholderImage: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: Colors.accentLight,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#ccc',
+    borderWidth: 3,
+    borderColor: Colors.primary,
     borderStyle: 'dashed',
   },
   placeholderText: {
-    fontSize: 40,
+    fontSize: 44,
   },
   placeholderSubtext: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 5,
+    color: Colors.primaryDark,
+    marginTop: 6,
+    fontWeight: '500',
   },
   imageHint: {
-    fontSize: 12,
-    color: '#999',
+    fontSize: 13,
+    color: Colors.text.tertiary,
     textAlign: 'center',
+    marginTop: 4,
   },
   section: {
-    marginBottom: 25,
+    marginBottom: 28,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 15,
+    color: Colors.text.primary,
+    marginBottom: 16,
   },
   label: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#555',
-    marginBottom: 6,
-    marginTop: 12,
+    fontWeight: '600',
+    color: Colors.text.secondary,
+    marginBottom: 8,
+    marginTop: 14,
   },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: Colors.border.light,
+    borderRadius: 12,
+    padding: 14,
     fontSize: 16,
-    color: '#333',
+    color: Colors.text.primary,
   },
   textArea: {
-    minHeight: 80,
+    minHeight: 100,
     textAlignVertical: 'top',
   },
   pickerButton: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: Colors.border.light,
+    borderRadius: 12,
+    padding: 14,
   },
   pickerText: {
     fontSize: 16,
-    color: '#333',
+    color: Colors.text.primary,
   },
   pickerPlaceholder: {
     fontSize: 16,
-    color: '#999',
+    color: Colors.text.tertiary,
   },
   pickerContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: Colors.border.light,
+    borderRadius: 12,
     marginTop: 8,
     maxHeight: 200,
     position: 'relative',
     zIndex: 1000,
+    shadowColor: Colors.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+    elevation: 5,
   },
   pickerItem: {
-    padding: 12,
+    padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: Colors.border.light,
   },
   pickerItemText: {
     fontSize: 16,
-    color: '#333',
+    color: Colors.text.primary,
   },
   submitButton: {
-    backgroundColor: '#007AFF',
-    padding: 16,
-    borderRadius: 8,
+    backgroundColor: Colors.accent,
+    padding: 18,
+    borderRadius: 12,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 24,
+    shadowColor: Colors.shadow,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
   submitButtonDisabled: {
-    backgroundColor: '#ccc',
+    backgroundColor: Colors.text.tertiary,
+    opacity: 0.6,
   },
   submitButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 18,
     fontWeight: '600',
   },
   footer: {
-    marginTop: 20,
+    marginTop: 24,
     alignItems: 'center',
   },
   footerText: {
-    fontSize: 12,
-    color: '#999',
+    fontSize: 13,
+    color: Colors.text.tertiary,
   },
 });

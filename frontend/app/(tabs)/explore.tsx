@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
+import Colors from '@/constants/colors';
 
 // Use hardcoded URL for web, env variable for native
 const getApiUrl = () => {
@@ -154,7 +155,7 @@ export default function ExploreScreen() {
 
         {loading ? (
           <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color="#4CAF50" />
+            <ActivityIndicator size="large" color={Colors.primary} />
             <ThemedText style={styles.loadingText}>
               {backendOnline ? 'Loading projects...' : 'Connecting to backend...'}
             </ThemedText>
@@ -229,8 +230,12 @@ export default function ExploreScreen() {
                   <ThemedText type="defaultSemiBold" style={styles.projectTitle}>
                     {project.title}
                   </ThemedText>
-                  <View style={styles.statusBadge}>
-                    <ThemedText style={styles.statusText}>{project.status}</ThemedText>
+                  <View style={[styles.statusBadge, { 
+                    backgroundColor: project.status === 'open' ? Colors.status.open : Colors.status.closed 
+                  }]}>
+                    <ThemedText style={styles.statusText}>
+                      {project.status === 'open' ? 'OPEN' : 'CLOSED'}
+                    </ThemedText>
                   </View>
                 </View>
                 
@@ -265,182 +270,218 @@ export default function ExploreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.background,
   },
   content: {
     padding: 20,
     paddingTop: 60,
+    paddingBottom: 40,
   },
   header: {
-    marginBottom: 20,
+    marginBottom: 24,
     alignItems: 'center',
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
+    fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: 8,
+    color: Colors.text.primary,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 15,
     textAlign: 'center',
-    opacity: 0.7,
+    color: Colors.text.secondary,
   },
   createButton: {
-    backgroundColor: '#4CAF50',
-    padding: 16,
-    borderRadius: 8,
+    backgroundColor: Colors.accent,
+    padding: 18,
+    borderRadius: 14,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 28,
+    shadowColor: Colors.shadow,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
   createButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 16,
     fontWeight: '600',
   },
   centerContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 40,
+    paddingVertical: 60,
   },
   loadingText: {
-    marginTop: 12,
-    opacity: 0.7,
+    marginTop: 16,
+    color: Colors.text.secondary,
+    fontSize: 15,
   },
   errorContainer: {
     alignItems: 'center',
-    padding: 20,
+    padding: 24,
     marginTop: 20,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.error,
   },
   errorEmoji: {
     fontSize: 48,
-    marginBottom: 12,
-  },
-  errorText: {
-    color: '#ff5252',
-    textAlign: 'center',
     marginBottom: 16,
   },
+  errorText: {
+    color: Colors.error,
+    textAlign: 'center',
+    marginBottom: 16,
+    fontSize: 15,
+    fontWeight: '500',
+  },
   retryButton: {
-    backgroundColor: '#2196F3',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginBottom: 12,
+    backgroundColor: Colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    marginBottom: 16,
   },
   retryButtonText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontWeight: '600',
+    fontSize: 15,
   },
   helpText: {
     fontSize: 12,
-    opacity: 0.6,
+    color: Colors.text.tertiary,
     textAlign: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
   emptyState: {
     alignItems: 'center',
-    padding: 40,
-    marginTop: 20,
+    padding: 48,
+    marginTop: 32,
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
   },
   emptyEmoji: {
-    fontSize: 64,
-    marginBottom: 16,
+    fontSize: 72,
+    marginBottom: 20,
   },
   emptyText: {
     marginBottom: 8,
+    fontSize: 20,
+    fontWeight: '600',
+    color: Colors.text.primary,
   },
   emptyDescription: {
-    opacity: 0.7,
+    color: Colors.text.secondary,
     textAlign: 'center',
+    fontSize: 15,
   },
   projectsList: {
     marginBottom: 20,
   },
   projectCount: {
     marginBottom: 16,
-    opacity: 0.7,
+    color: Colors.text.secondary,
     fontSize: 14,
+    fontWeight: '500',
   },
   projectCard: {
-    backgroundColor: 'rgba(100, 100, 100, 0.1)',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 18,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: Colors.border.light,
+    shadowColor: Colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 2,
   },
   projectHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   projectTitle: {
     fontSize: 18,
+    fontWeight: '600',
     flex: 1,
-    marginRight: 8,
+    marginRight: 12,
+    color: Colors.text.primary,
   },
   statusBadge: {
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   statusText: {
-    color: '#fff',
+    color: Colors.text.inverse,
     fontSize: 12,
     fontWeight: '600',
+    textTransform: 'capitalize',
   },
   projectDescription: {
-    opacity: 0.8,
-    marginBottom: 12,
-    lineHeight: 20,
+    color: Colors.text.secondary,
+    marginBottom: 14,
+    lineHeight: 22,
+    fontSize: 15,
   },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 12,
+    marginBottom: 14,
+    gap: 6,
   },
   tag: {
-    backgroundColor: 'rgba(33, 150, 243, 0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    backgroundColor: Colors.accentLight,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 12,
-    marginRight: 6,
-    marginBottom: 6,
   },
   tagText: {
-    fontSize: 12,
-    color: '#2196F3',
+    fontSize: 13,
+    color: Colors.primaryDark,
+    fontWeight: '500',
   },
   projectFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border.light,
   },
   matchButton: {
-    color: '#4CAF50',
+    color: Colors.primary,
     fontWeight: '600',
+    fontSize: 15,
   },
   troubleshootContainer: {
-    backgroundColor: 'rgba(255, 152, 0, 0.1)',
-    padding: 16,
-    borderRadius: 8,
+    backgroundColor: Colors.backgroundSecondary,
+    padding: 20,
+    borderRadius: 12,
     marginTop: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 152, 0, 0.3)',
+    borderColor: Colors.border.medium,
   },
   troubleshootTitle: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 12,
-    color: '#FF9800',
+    color: Colors.text.primary,
   },
   troubleshootText: {
-    fontSize: 13,
+    fontSize: 14,
     marginBottom: 6,
-    opacity: 0.9,
+    color: Colors.text.secondary,
     paddingLeft: 8,
   },
 });
