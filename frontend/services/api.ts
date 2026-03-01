@@ -436,6 +436,9 @@ export async function deleteProject(
   ownerId: string
 ): Promise<ApiResponse<{ success: boolean; message: string }>> {
   try {
+    console.log('[API] deleteProject called with:', { projectId, ownerId });
+    console.log('[API] Request URL:', `${API_BASE_URL}/project/${projectId}`);
+    
     const response = await fetch(`${API_BASE_URL}/project/${projectId}`, {
       method: 'DELETE',
       headers: {
@@ -444,14 +447,28 @@ export async function deleteProject(
       body: JSON.stringify({ owner_id: ownerId }),
     });
 
+    console.log('[API] Response status:', response.status);
+    console.log('[API] Response ok:', response.ok);
+
     if (!response.ok) {
-      const error = await response.json();
-      return { error: error.detail || 'Failed to delete project' };
+      const errorText = await response.text();
+      console.error('[API] Error response text:', errorText);
+      
+      try {
+        const error = JSON.parse(errorText);
+        console.error('[API] Parsed error:', error);
+        return { error: error.detail || error.message || 'Failed to delete project' };
+      } catch {
+        console.error('[API] Could not parse error as JSON');
+        return { error: `Failed to delete project: ${response.status} ${response.statusText}` };
+      }
     }
 
     const data = await response.json();
+    console.log('[API] Success response data:', data);
     return { data };
   } catch (error) {
+    console.error('[API] deleteProject exception:', error);
     return { error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }

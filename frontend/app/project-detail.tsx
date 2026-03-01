@@ -260,84 +260,87 @@ export default function ProjectDetailScreen() {
     }
   };
 
-  const handleDeleteProject = async () => {
-    if (!project) {
-      Alert.alert('Error', 'Project data not loaded');
-      console.error('[Delete] No project data available');
-      return;
-    }
-    
-    if (!project.owner_id) {
-      Alert.alert('Error', 'Cannot delete: Missing owner information');
-      console.error('[Delete] Missing owner_id. Project data:', JSON.stringify(project, null, 2));
-      return;
-    }
-    
-    if (!project.id) {
-      Alert.alert('Error', 'Cannot delete: Missing project ID');
-      console.error('[Delete] Missing project.id');
-      return;
-    }
-    
-    console.log('[Delete] Project data check:', {
-      id: project.id,
-      owner_id: project.owner_id,
-      title: project.title
-    });
-    
-    Alert.alert(
-      'Delete Project',
-      'Are you sure you want to permanently delete this project? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setDeletingProject(true);
-            try {
-              console.log('[Delete] Starting delete process...');
-              console.log('[Delete] Project ID:', project.id);
-              console.log('[Delete] Owner ID:', project.owner_id);
-              
-              const result = await deleteProject(project.id, project.owner_id);
-              
-              console.log('[Delete] API response:', JSON.stringify(result, null, 2));
-              
-              if (result.error) {
-                console.error('[Delete] API returned error:', result.error);
-                Alert.alert('Delete Failed', result.error);
-              } else if (result.data) {
-                console.log('[Delete] Delete successful!');
-                Alert.alert(
-                  'Success', 
-                  'Project deleted successfully',
-                  [
-                    { 
-                      text: 'OK', 
-                      onPress: () => {
-                        console.log('[Delete] Navigating to profile...');
-                        router.push('/(tabs)/profile');
-                      }
-                    }
-                  ]
-                );
-              } else {
-                console.warn('[Delete] Unexpected response format:', result);
-                Alert.alert('Warning', 'Deletion may have succeeded but response was unexpected');
-              }
-            } catch (error: any) {
-              console.error('[Delete] Exception occurred:', error);
-              console.error('[Delete] Error stack:', error.stack);
-              Alert.alert('Error', error.message || 'Failed to delete project. Please try again.');
-            } finally {
-              setDeletingProject(false);
-            }
-          }
-        }
-      ]
-    );
-  };
+  // TEMPORARILY DISABLED - Delete functionality not working
+  // const handleDeleteProject = async () => {
+  //   if (!project) {
+  //     Alert.alert('Error', 'Project data not loaded');
+  //     console.error('[Delete] No project data available');
+  //     return;
+  //   }
+  //   
+  //   if (!project.owner_id) {
+  //     Alert.alert('Error', 'Cannot delete: Missing owner information');
+  //     console.error('[Delete] Missing owner_id. Project data:', JSON.stringify(project, null, 2));
+  //     return;
+  //   }
+  //   
+  //   if (!project.id) {
+  //     Alert.alert('Error', 'Cannot delete: Missing project ID');
+  //     console.error('[Delete] Missing project.id');
+  //     return;
+  //   }
+  //   
+  //   console.log('[Delete] Project data check:', {
+  //     id: project.id,
+  //     owner_id: project.owner_id,
+  //     title: project.title,
+  //     isOwner: isOwner
+  //   });
+  //   
+  //   Alert.alert(
+  //     'Delete Project',
+  //     'Are you sure you want to permanently delete this project? This action cannot be undone.',
+  //     [
+  //       { text: 'Cancel', style: 'cancel' },
+  //       {
+  //         text: 'Delete',
+  //         style: 'destructive',
+  //         onPress: async () => {
+  //           setDeletingProject(true);
+  //           try {
+  //             console.log('[Delete] Starting delete process...');
+  //             console.log('[Delete] Calling API with:', {
+  //               projectId: project.id,
+  //               ownerId: project.owner_id
+  //             });
+  //             
+  //             const result = await deleteProject(project.id, project.owner_id);
+  //             
+  //             console.log('[Delete] Raw API response:', result);
+  //             
+  //             if (result.error) {
+  //               console.error('[Delete] API returned error:', result.error);
+  //               Alert.alert('Delete Failed', result.error);
+  //               setDeletingProject(false);
+  //             } else {
+  //               console.log('[Delete] Delete successful!');
+  //               Alert.alert(
+  //                 'Success', 
+  //                 'Project deleted successfully',
+  //                 [
+  //                   { 
+  //                     text: 'OK', 
+  //                     onPress: () => {
+  //                       console.log('[Delete] Navigating to profile...');
+  //                       setDeletingProject(false);
+  //                       router.replace('/(tabs)/profile');
+  //                     }
+  //                   }
+  //                 ]
+  //               );
+  //             }
+  //           } catch (error: any) {
+  //             console.error('[Delete] Exception occurred:', error);
+  //             console.error('[Delete] Error message:', error.message);
+  //             console.error('[Delete] Error stack:', error.stack);
+  //             Alert.alert('Error', error.message || 'Failed to delete project. Please try again.');
+  //             setDeletingProject(false);
+  //           }
+  //         }
+  //       }
+  //     ]
+  //   );
+  // };
 
   const handleToggleStatus = async () => {
     if (!project) return;
@@ -836,7 +839,8 @@ export default function ProjectDetailScreen() {
         )}
 
         {/* Action Buttons */}
-        {isOwner ? (
+        {/* TEMPORARILY DISABLED - Delete button hidden until functionality is fixed */}
+        {/* {isOwner ? (
           <View style={styles.ownerActions}>
             <TouchableOpacity 
               style={[styles.deleteButton, deletingProject && styles.buttonDisabled]} 
@@ -848,6 +852,13 @@ export default function ProjectDetailScreen() {
                 {deletingProject ? '⏳ Deleting...' : '🗑️ Delete Project'}
               </Text>
             </TouchableOpacity>
+          </View>
+        ) : */}
+        {isOwner ? (
+          <View style={styles.ownerMessage}>
+            <Text style={styles.ownerMessageText}>
+              📝 You own this project. You can edit it by clicking the ✏️ Edit icon above.
+            </Text>
           </View>
         ) : isDenied ? (
           <View style={styles.deniedBanner}>
@@ -1378,6 +1389,21 @@ const styles = StyleSheet.create({
   deniedBannerSub: {
     color: '#b91c1c',
     fontSize: 12,
+    textAlign: 'center',
+  },
+  ownerMessage: {
+    backgroundColor: '#dbeafe',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 20,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#60a5fa',
+  },
+  ownerMessageText: {
+    color: '#1e40af',
+    fontSize: 15,
+    fontWeight: '600',
     textAlign: 'center',
   },
 });
