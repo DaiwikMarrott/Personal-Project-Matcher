@@ -10,11 +10,12 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
 import { useAuth } from '../contexts/AuthContext';
 import { checkProfileExists, updateProfile, uploadAvatar } from '../services/api';
+import { IconSymbol } from '../components/ui/icon-symbol';
 
 export default function ProfileEdit() {
   const router = useRouter();
@@ -174,25 +175,28 @@ export default function ProfileEdit() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#10B981" />
       </View>
     );
   }
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: 'Edit Profile',
-          headerShown: true,
-          headerStyle: { backgroundColor: '#10B981' },
-          headerTintColor: '#fff',
-          headerTitleStyle: { fontWeight: '700' },
-        }}
-      />
-      <View style={styles.container}>
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+    <View style={styles.container}>
+      {/* Green Header Bar */}
+      <View style={styles.headerBar}>
+        <TouchableOpacity
+          style={styles.headerBackButton}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <IconSymbol size={24} name="chevron.left" color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Edit Profile</Text>
+        <View style={{ width: 44 }} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Avatar Section */}
           <View style={styles.avatarSection}>
             <TouchableOpacity onPress={pickImage} disabled={uploadingImage}>
@@ -346,7 +350,6 @@ export default function ProfileEdit() {
           </View>
         </ScrollView>
       </View>
-    </>
   );
 }
 
@@ -355,15 +358,40 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#e6f7ed',
   },
-  centered: {
+  headerBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#10B981',
+  },
+  headerBackButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#e6f7ed',
   },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 24,
     paddingBottom: 40,
+    maxWidth: 800,
+    width: '100%',
+    alignSelf: 'center',
   },
   avatarSection: {
     alignItems: 'center',

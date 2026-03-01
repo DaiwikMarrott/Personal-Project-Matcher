@@ -164,24 +164,26 @@ export default function PostProjectScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
+      {/* Green Header Bar */}
+      <View style={styles.headerBar}>
+        <TouchableOpacity
+          style={styles.headerBackButton}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <IconSymbol size={24} name="chevron.left" color="#fff" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => router.push('/(tabs)')}>
+          <Text style={styles.headerTitle}>Post Project</Text>
+        </TouchableOpacity>
+        <View style={{ width: 44 }} />
+      </View>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Brand Header */}
-        <View style={styles.brandHeader}>
-          <TouchableOpacity onPress={() => router.push('/(tabs)')}>
-            <Text style={styles.brandTitle}>Projects Matcher</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-          >
-            <IconSymbol size={24} name="chevron.left" color="#fff" />
-          </TouchableOpacity>
-        </View>
 
         <View style={styles.card}>
           <View style={styles.inputContainer}>
@@ -292,38 +294,33 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#e6f7ed',
   },
+  headerBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#10B981',
+  },
+  headerBackButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+  },
   scrollView: {
     flex: 1,
   },
   content: {
     padding: 20,
     paddingBottom: 40,
-  },
-  brandHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    marginBottom: 16,
-  },
-  brandTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#10B981',
-    letterSpacing: -1,
-  },
-  backButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#10B981',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   card: {
     backgroundColor: 'rgba(255, 255, 255, 0.6)',
