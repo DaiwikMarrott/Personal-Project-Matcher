@@ -3,7 +3,7 @@
  * View and edit user profile information
  * Theme: Modern pastel green design
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth, supabase } from '../contexts/AuthContext';
@@ -72,6 +73,10 @@ export default function ProfileScreen() {
   const [hydeLoading, setHydeLoading] = useState(false);
   const [hydeScript, setHydeScript] = useState('');
   const [showHydeScript, setShowHydeScript] = useState(false);
+  const [displayedText, setDisplayedText] = useState('');
+  const [isTalking, setIsTalking] = useState(false);
+  const audioRef = useRef<any>(null);
+  const talkingAnimation = useRef(new Animated.Value(0)).current;
 
   // Load profile data on mount
   useEffect(() => {
@@ -143,6 +148,49 @@ export default function ProfileScreen() {
     }
   };
 
+  // Animation functions for Hyde character
+  const animateTyping = (text: string, duration: number) => {
+    setDisplayedText('');
+    const words = text.split(' ');
+    const msPerWord = (duration * 1000) / words.length;
+    
+    let currentIndex = 0;
+    const interval = setInterval(() => {
+      if (currentIndex < words.length) {
+        setDisplayedText(prev => prev + (prev ? ' ' : '') + words[currentIndex]);
+        currentIndex++;
+      } else {
+        clearInterval(interval);
+      }
+    }, msPerWord);
+    
+    return () => clearInterval(interval);
+  };
+
+  const startTalkingAnimation = () => {
+    setIsTalking(true);
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(talkingAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(talkingAnimation, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  };
+
+  const stopTalkingAnimation = () => {
+    setIsTalking(false);
+    talkingAnimation.stopAnimation();
+    talkingAnimation.setValue(0);
+  };
+
   const hearMrHyde = async () => {
     if (!profileId) {
       Alert.alert('Error', 'Profile not loaded');
@@ -196,28 +244,41 @@ export default function ProfileScreen() {
           console.log('Created blob URL:', audioUrl);
           
           const audio = new Audio(audioUrl);
+          audioRef.current = audio;
           
-          // Add event listeners for debugging
+          // Add event listeners for animations
           audio.addEventListener('loadeddata', () => {
             console.log('Audio loaded successfully, duration:', audio.duration);
+            // Start typing animation based on audio duration
+            if (data.script && audio.duration > 0) {
+              animateTyping(data.script, audio.duration);
+            }
           });
           
           audio.addEventListener('canplay', () => {
             console.log('Audio can play');
           });
           
-          audio.addEventListener('playing', () => {
+          audio.addEventListener('play', () => {
             console.log('Audio is playing');
+            startTalkingAnimation();
+          });
+          
+          audio.addEventListener('pause', () => {
+            console.log('Audio paused');
+            stopTalkingAnimation();
           });
           
           audio.addEventListener('error', (e) => {
             console.error('Audio error event:', e);
             console.error('Audio error details:', audio.error);
             Alert.alert('Audio Error', `Failed to load audio: ${audio.error?.message || 'Unknown error'}`);
+            stopTalkingAnimation();
           });
           
           audio.addEventListener('ended', () => {
             console.log('Audio playback finished');
+            stopTalkingAnimation();
             URL.revokeObjectURL(audioUrl); // Clean up
           });
           
@@ -236,6 +297,7 @@ export default function ProfileScreen() {
                 console.error('Error playing audio:', err);
                 console.error('Error name:', err.name);
                 console.error('Error message:', err.message);
+                stopTalkingAnimation();
                 if (err.name === 'NotAllowedError') {
                   Alert.alert('Audio Blocked', 'Browser blocked audio playback. Please check your browser settings and allow audio.');
                 } else if (err.name === 'NotSupportedError') {
@@ -247,7 +309,9 @@ export default function ProfileScreen() {
           }
         } catch (err) {
           console.error('Exception creating/playing audio:', err);
-          Alert.alert('Audio Error', 'Failed to create audio player: ' + err.message);
+          const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+          Alert.alert('Audio Error', 'Failed to create audio player: ' + errorMessage);
+          stopTalkingAnimation();
         }
       } else if (data.audio_base64) {
         // For mobile, we'll need expo-av
@@ -423,10 +487,43 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* Hyde Script Display */}
+      {/* Hyde Script Display with Animated Character */}
       {showHydeScript && hydeScript && (
-        <View style={styles.hydeScriptContainer}>
-          <Text style={styles.hydeScriptText}>{hydeScript}</Text>
+        <View style={styles.hydeVerdictContainer}>
+          <View style={styles.hydeCharacterSection}>
+            <Animated.View 
+              style={[
+                styles.hydeAvatar,
+                {
+                  transform: [{
+                    scaleY: talkingAnimation.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [1, 0.95]
+                    })
+                  }]
+                }
+              ]}
+            >
+              <Text style={styles.hydeAvatarText}>😈</Text>
+            </Animated.View>
+            
+            {isTalking && (
+              <View style={styles.talkingIndicator}>
+                <View style={[styles.soundWave, { height: 12 }]} />
+                <View style={[styles.soundWave, { height: 18 }]} />
+                <View style={[styles.soundWave, { height: 14 }]} />
+              </View>
+            )}
+            
+            <Text style={styles.hydeNameTag}>Mr. Hyde</Text>
+          </View>
+          
+          {displayedText ? (
+            <View style={styles.speechBubble}>
+              <View style={styles.speechBubbleTriangle} />
+              <Text style={styles.hydeScriptText}>{displayedText}</Text>
+            </View>
+          ) : null}
         </View>
       )}
 
@@ -704,10 +801,13 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   hydeButtonText: {
-    color: '#FFFFFF',
+    color: '#FFFFFF', // Pure white with shadow
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: 0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   editButton: {
     backgroundColor: Colors.primary,
@@ -725,13 +825,79 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  hydeScriptContainer: {
-    backgroundColor: '#FFF0F8', // Light pink
-    padding: 16,
-    borderRadius: 12,
+  // Hyde Animated Character Styles
+  hydeVerdictContainer: {
     marginBottom: 20,
+    alignItems: 'center',
+  },
+  hydeCharacterSection: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  hydeAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius:40,
+    backgroundColor: '#FFE4F0',
+    borderWidth: 3,
+    borderColor: '#FF69B4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#FF69B4',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  hydeAvatarText: {
+    fontSize: 44,
+  },
+  talkingIndicator: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 8,
+    height: 20,
+    alignItems: 'flex-end',
+  },
+  soundWave: {
+    width: 4,
+    backgroundColor: '#FF69B4',
+    borderRadius: 2,
+  },
+  hydeNameTag: {
+    marginTop: 8,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FF69B4',
+    letterSpacing: 0.5,
+  },
+  speechBubble: {
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 16,
     borderWidth: 2,
     borderColor: '#FF69B4',
+    maxWidth: '85%',
+    position: 'relative',
+    shadowColor: Colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  speechBubbleTriangle: {
+    position: 'absolute',
+    top: -10,
+    left: '50%',
+    marginLeft: -10,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 10,
+    borderRightWidth: 10,
+    borderBottomWidth: 10,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#FF69B4',
   },
   hydeScriptText: {
     fontSize: 16,
@@ -739,6 +905,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     fontStyle: 'italic',
     textAlign: 'center',
+    lineHeight: 22,
   },
   imageSection: {
     alignItems: 'center',
