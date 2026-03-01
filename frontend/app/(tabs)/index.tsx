@@ -36,10 +36,9 @@ export default function HomeScreen() {
   // Reload data when screen comes into focus (to show updated projects)
   useFocusEffect(
     useCallback(() => {
-      if (!loading) {
-        loadData();
-      }
-    }, [loading])
+      console.log('[Home] Screen focused, reloading data...');
+      loadData();
+    }, [])
   );
 
   const loadData = async () => {

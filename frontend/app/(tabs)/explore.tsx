@@ -40,10 +40,9 @@ export default function ExploreScreen() {
   // Reload projects when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      if (!loading) {
-        loadProjects();
-      }
-    }, [loading, sortByMatch, userProfileId])
+      console.log('[Explore] Screen focused, reloading projects...');
+      loadProjects();
+    }, [sortByMatch, userProfileId])
   );
 
   useEffect(() => {
@@ -97,17 +96,15 @@ export default function ExploreScreen() {
           projectData = result.data;
         }
       } else {
-        // Load all open projects
+        // Load all open projects (including user's own projects)
         const result = await getProjects({ status: 'open', limit: 50 });
         if (result.data) {
           projectData = result.data;
         }
       }
       
-      // Filter out user's own projects
-      if (userProfileId) {
-        projectData = projectData.filter(project => project.owner_id !== userProfileId);
-      }
+      // Note: We now show user's own projects in explore
+      // (removed the filter that excluded them)
       
       setProjects(projectData);
       setFilteredProjects(projectData);
