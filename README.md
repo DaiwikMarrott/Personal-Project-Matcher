@@ -328,5 +328,5 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 
 <p align="center">
   <strong>Built with 🧪 by innovators, for innovators.</strong><br>
-  <em>Where every "I wish I could build..." becomes "We did it. Daiwik && Sir Nathan"</em>
+  <em>Where every "I wish I could build..." becomes "We did it."</em>
 </p>
