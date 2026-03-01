@@ -1,12 +1,12 @@
 /**
- * Home Screen  
- * Shows personalized project recommendations
+ * Home Screen
+ * Personalized dashboard with greeting, stats, recommended projects, and own projects.
  */
-import { 
-  StyleSheet, 
-  View, 
-  ScrollView, 
-  TouchableOpacity, 
+import {
+  StyleSheet,
+  View,
+  ScrollView,
+  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   Text,
@@ -16,17 +16,30 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { getRecommendedProjects, getProjects, Profile as ApiProfile, getDeniedProjectIds } from '@/services/api';
+import {
+  getRecommendedProjects,
+  getProjects,
+  getProfileStats,
+  getDeniedProjectIds,
+  getNotifications,
+  getUserChats,
+  Profile as ApiProfile,
+  ProfileStats,
+} from '@/services/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, signOut, checkProfileExists } = useAuth();
+  const { user, checkProfileExists } = useAuth();
   const [profile, setProfile] = useState<ApiProfile | null>(null);
   const [recommendedProjects, setRecommendedProjects] = useState<any[]>([]);
+  const [myProjects, setMyProjects] = useState<any[]>([]);
+  const [stats, setStats] = useState<ProfileStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deniedProjectIds, setDeniedProjectIds] = useState<string[]>([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
 
   // Load user profile and recommended projects on mount
   useEffect(() => {
@@ -48,62 +61,42 @@ export default function HomeScreen() {
     }
 
     try {
-      // Check if profile exists
       const { exists, profile: userProfile } = await checkProfileExists(user.id);
-      
-      if (!exists || !userProfile) {
-        console.log('[HomeScreen] No profile found, but user should have been redirected at root level');
-        setLoading(false);
-        return;
-      }
-
-      console.log('[HomeScreen] Profile loaded:', userProfile.id);
+      if (!exists || !userProfile) { setLoading(false); return; }
       setProfile(userProfile);
 
-      // Load denied project IDs
-      const deniedResult = await getDeniedProjectIds(userProfile.id);
-      if (deniedResult.data) {
-        setDeniedProjectIds(deniedResult.data.denied_project_ids);
-      }
+      // Parallel fetch everything
+      const [deniedResult, statsResult, recommendedResult, myProjectsResult, notifResult, chatsResult] = await Promise.all([
+        getDeniedProjectIds(userProfile.id),
+        getProfileStats(userProfile.id),
+        getRecommendedProjects(userProfile.id, 12),
+        getProjects({ owner_id: userProfile.id, status: 'open', limit: 20 }),
+        getNotifications(userProfile.id, true),
+        getUserChats(userProfile.id),
+      ]);
 
-      // Load recommended projects
-      if (userProfile?.id) {
-        const result = await getRecommendedProjects(userProfile.id, 10);
-        if (result.data) {
-          // Filter out user's own projects
-          const filteredProjects = result.data.filter(
-            (project: any) => project.owner_id !== userProfile.id
-          );
-          setRecommendedProjects(filteredProjects);
-        }
-      } else {
-        // Fallback: load all open projects
-        const result = await getProjects({ status: 'open', limit: 10 });
-        if (result.data) {
-          // Filter out user's own projects if profile exists
-          const filteredProjects = userProfile?.id 
-            ? result.data.filter((project: any) => project.owner_id !== userProfile.id)
-            : result.data;
-          setRecommendedProjects(filteredProjects);
-        }
+      if (deniedResult.data) setDeniedProjectIds(deniedResult.data.denied_project_ids);
+      if (statsResult.data) setStats(statsResult.data);
+      if (recommendedResult.data) {
+        setRecommendedProjects(
+          recommendedResult.data.filter((p: any) => p.owner_id !== userProfile.id)
+        );
+      }
+      if (myProjectsResult.data) setMyProjects(myProjectsResult.data);
+      if (notifResult.data) setUnreadNotifCount(notifResult.data.count ?? notifResult.data.notifications?.length ?? 0);
+      if (chatsResult.data) {
+        const totalUnread = (chatsResult.data.chats as any[]).reduce((sum: number, c: any) => sum + (c.unread_count || 0), 0);
+        setUnreadChatCount(totalUnread);
       }
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('[HomeScreen] Error loading data:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadData();
-  };
-
-  const handleLogout = async () => {
-    await signOut();
-    router.replace('/landing');
-  };
+  const onRefresh = () => { setRefreshing(true); loadData(); };
 
   if (loading) {
     return (
@@ -113,415 +106,382 @@ export default function HomeScreen() {
     );
   }
 
+  const firstName = profile?.first_name || '';
+  const lastName = profile?.last_name || '';
+  const approvedCount = stats?.approved_count ?? 0;
+  const deniedCount = stats?.denied_count ?? 0;
+  const ratioLabel =
+    approvedCount === 0 && deniedCount === 0
+      ? '—'
+      : deniedCount === 0
+      ? `${approvedCount}:0`
+      : `${approvedCount}:${deniedCount}`;
+
   return (
     <View style={styles.mainContainer}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />}
       >
-      {/* Scrollable Header with Profile and Notifications */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Projects Matcher</Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={styles.notificationButton}
-            onPress={() => router.push('/notifications')}
-            activeOpacity={0.7}
-          >
-            <IconSymbol size={24} name="bell.fill" color="#065f46" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={() => router.push('/(tabs)/profile')}
-            activeOpacity={0.7}
-          >
-            {profile?.profile_picture_url ? (
-              <Image
-                source={{ uri: profile.profile_picture_url }}
-                style={styles.profileImage}
-              />
-            ) : (
-              <IconSymbol size={24} name="person.fill" color="#065f46" />
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-      {/* Dashboard Stats */}
-      <View style={styles.dashboard}>
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>{recommendedProjects.length}</Text>
-            <Text style={styles.statLabel}>Matches</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>🎯</Text>
-            <Text style={styles.statLabel}>AI Powered</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Text style={styles.statNumber}>💡</Text>
-            <Text style={styles.statLabel}>Smart Collab</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Hero Section */}
-      <View style={styles.hero}>
-        <Text style={styles.heroTitle}>✨ Find the best match for your project</Text>
-        <Text style={styles.heroSubtitle}>
-          Our algorithm connects you with peers who share your interests and complement your skills.
-        </Text>
-        <TouchableOpacity
-          style={styles.heroButton}
-          onPress={() => router.push('/(tabs)/explore')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.heroButtonText}>Discover Matches →</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Recommended Projects */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recommended Projects</Text>
-        
-        {recommendedProjects.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No projects yet. Be the first to create one!</Text>
-          </View>
-        ) : (
-          <View style={styles.projectGrid}>
-            {recommendedProjects.map((project) => (
-              <TouchableOpacity
-                key={project.id}
-                style={styles.projectCard}
-                activeOpacity={0.7}
-                onPress={() => {
-                  router.push({
-                    pathname: '/project-detail',
-                    params: { projectData: JSON.stringify(project), isDenied: deniedProjectIds.includes(project.id) ? '1' : '0' },
-                  });
-                }}
-              >
-                {/* Project Image */}
-                <View style={styles.projectImageContainer}>
-                  {project.project_image_url ? (
-                    <Image
-                      source={{ uri: project.project_image_url }}
-                      style={styles.projectImage}
-                    />
-                  ) : (
-                    <View style={styles.projectImagePlaceholder}>
-                      <Text style={styles.projectImagePlaceholderText}>📁</Text>
-                    </View>
-                  )}
+        {/* ── Top Bar ── */}
+        <View style={styles.topBar}>
+          <Text style={styles.appTitle}>Projects Matcher</Text>
+          <View style={styles.topBarActions}>
+            <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/notifications')} activeOpacity={0.7}>
+              <IconSymbol size={22} name="bell.fill" color="#065f46" />
+              {unreadNotifCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{unreadNotifCount > 99 ? '99+' : unreadNotifCount}</Text>
                 </View>
-                
-                {/* Project Info */}
-                <View style={styles.projectInfo}>
-                  {deniedProjectIds.includes(project.id) && (
-                    <View style={styles.deniedBadge}>
-                      <Text style={styles.deniedBadgeText}>❌ Denied</Text>
-                    </View>
-                  )}
-                  <Text style={styles.projectTitle} numberOfLines={2}>{project.title}</Text>
-                    {(project.owner_name || project.owner_first_name) && (
-                      <Text style={styles.projectOwner}>
+              ) : null}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/(tabs)/chats')} activeOpacity={0.7}>
+              <IconSymbol size={22} name="bubble.left.and.bubble.right.fill" color="#065f46" />
+              {unreadChatCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{unreadChatCount > 99 ? '99+' : unreadChatCount}</Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.avatarButton} onPress={() => router.push('/(tabs)/profile')} activeOpacity={0.7}>
+              {profile?.profile_picture_url ? (
+                <Image source={{ uri: profile.profile_picture_url }} style={styles.avatarImg} />
+              ) : (
+                <Text style={styles.avatarInitials}>
+                  {`${firstName[0] || ''}${lastName[0] || ''}`.toUpperCase()}
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* ── Greeting ── */}
+        <View style={styles.greetingBlock}>
+          <Text style={styles.greetingHello}>👋 Hello, {firstName} {lastName}!</Text>
+          <Text style={styles.greetingSubtitle}>Here's your project dashboard</Text>
+        </View>
+
+        {/* ── Stats Row ── */}
+        <View style={styles.statsRow}>
+          <View style={[styles.statCard, styles.statCardGreen]}>
+            <Text style={styles.statEmoji}>🗂</Text>
+            <Text style={styles.statNumber}>{stats?.projects_created ?? '—'}</Text>
+            <Text style={styles.statLabel}>Projects{'\n'}Created</Text>
+          </View>
+          <View style={[styles.statCard, styles.statCardBlue]}>
+            <Text style={styles.statEmoji}>📬</Text>
+            <Text style={styles.statNumber}>{stats?.interactions_this_week ?? '—'}</Text>
+            <Text style={styles.statLabel}>Applied{'\n'}This Week</Text>
+          </View>
+          <View style={[styles.statCard, styles.statCardAmber]}>
+            <Text style={styles.statEmoji}>⚖️</Text>
+            <Text style={styles.statNumber}>{ratioLabel}</Text>
+            <Text style={styles.statLabel}>Approved /{'\n'}Denied</Text>
+          </View>                </View>
+
+        {/* ── Recommended Projects ── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>✨ Recommended For You</Text>
+
+          {recommendedProjects.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyText}>No recommendations yet — fill in your profile to improve matches!</Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalScroll}
+            >
+              {recommendedProjects.slice(0, 8).map((project) => (
+                <TouchableOpacity
+                  key={project.id}
+                  style={styles.recCard}
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/project-detail',
+                      params: {
+                        projectData: JSON.stringify(project),
+                        isDenied: deniedProjectIds.includes(project.id) ? '1' : '0',
+                      },
+                    })
+                  }
+                >
+                  <View style={styles.recImageBox}>
+                    {project.project_image_url ? (
+                      <Image source={{ uri: project.project_image_url }} style={styles.recImage} />
+                    ) : (
+                      <View style={styles.recImagePlaceholder}>
+                        <Text style={{ fontSize: 28, opacity: 0.45 }}>📁</Text>
+                      </View>
+                    )}
+                    {!!project.similarity_score && (
+                      <View style={styles.matchBadge}>
+                        <Text style={styles.matchBadgeText}>
+                          {Math.round(project.similarity_score * 100)}%
+                        </Text>
+                      </View>
+                    )}
+                    {deniedProjectIds.includes(project.id) ? (
+                      <View style={styles.deniedBadge}>
+                        <Text style={styles.deniedBadgeText}>❌</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <View style={styles.recInfo}>
+                    <Text style={styles.recTitle} numberOfLines={2}>{project.title}</Text>
+                    {(project.owner_first_name || project.owner_name) ? (
+                      <Text style={styles.recOwner}>
                         by {project.owner_name || `${project.owner_first_name} ${project.owner_last_name || ''}`.trim()}
                       </Text>
-                    )}
-                    {project.tags && project.tags.length > 0 && (
-                      <View style={styles.tagContainer}>
-                        {project.tags.slice(0, 2).map((tag: string, index: number) => (
-                          <View key={index} style={styles.tag}>
+                    ) : null}
+                    {project.tags && project.tags.length > 0 ? (
+                      <View style={styles.tagRow}>
+                        {project.tags.slice(0, 2).map((tag: string, i: number) => (
+                          <View key={i} style={styles.tag}>
                             <Text style={styles.tagText}>{tag}</Text>
                           </View>
                         ))}
                       </View>
-                    )}
-                    {project.description && (
-                      <Text style={styles.projectDescription} numberOfLines={1}>
-                        {project.description}
-                      </Text>
-                    )}
-                    {project.similarity_score && (
-                      <Text style={styles.matchScore}>
-                        {Math.round(project.similarity_score * 100)}% Match
-                      </Text>
-                    )}
-                </View>
+                    ) : null}
+                  </View>
+                </TouchableOpacity>
+              ))}
+
+              {/* See All button */}
+              <TouchableOpacity
+                style={styles.seeAllCard}
+                activeOpacity={0.8}
+                onPress={() => router.push('/(tabs)/explore')}
+              >
+                <Text style={styles.seeAllArrow}>→</Text>
+                <Text style={styles.seeAllText}>See All</Text>
               </TouchableOpacity>
-            ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* ── My Projects ── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>🗂 My Projects</Text>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/post')} activeOpacity={0.7}>
+              <Text style={styles.newProjectLink}>+ New</Text>
+            </TouchableOpacity>
           </View>
-        )}
-      </View>
-        
-        {/* Logout Button */}
-        <TouchableOpacity 
-          style={styles.logoutButton}
-          onPress={handleLogout}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.logoutText}>Log Out</Text>
-        </TouchableOpacity>
+
+          {myProjects.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyText}>You haven't created any open projects yet.</Text>
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={() => router.push('/(tabs)/post')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.createButtonText}>Create a Project</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.myProjectsList}>
+              {myProjects.map((project) => (
+                <TouchableOpacity
+                  key={project.id}
+                  style={styles.myProjectRow}
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/project-detail',
+                      params: { projectData: JSON.stringify(project), isDenied: '0' },
+                    })
+                  }
+                >
+                  <View style={styles.myProjectImageBox}>
+                    {project.project_image_url ? (
+                      <Image source={{ uri: project.project_image_url }} style={styles.myProjectImage} />
+                    ) : (
+                      <View style={styles.myProjectImagePlaceholder}>
+                        <Text style={{ fontSize: 20, opacity: 0.45 }}>📁</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.myProjectInfo}>
+                    <Text style={styles.myProjectTitle} numberOfLines={1}>{project.title}</Text>
+                    {project.description ? (
+                      <Text style={styles.myProjectDesc} numberOfLines={2}>{project.description}</Text>
+                    ) : null}
+                    {project.tags && project.tags.length > 0 ? (
+                      <View style={styles.tagRow}>
+                        {project.tags.slice(0, 3).map((tag: string, i: number) => (
+                          <View key={i} style={styles.tag}>
+                            <Text style={styles.tagText}>{tag}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                  <IconSymbol size={16} name="chevron.right" color="#a8a29e" />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  mainContainer: {
-    flex: 1,
-    backgroundColor: '#e6f7ed',
-  },
-  header: {
+  mainContainer: { flex: 1, backgroundColor: '#e6f7ed' },
+  container: { flex: 1 },
+  content: { padding: 20, paddingBottom: 48 },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#e6f7ed' },
+
+  // Top bar
+  topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 16,
-    marginBottom: 8,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#10B981',
-    letterSpacing: -1,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  notificationButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#a7f3d0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  profileButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#a7f3d0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-    overflow: 'hidden',
-  },
-  profileImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 22,
-  },
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#e6f7ed',
-  },
-  hero: {
-    backgroundColor: '#10B981',
-    borderRadius: 32,
-    padding: 40,
-    marginBottom: 48,
-  },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#fff',
-    marginBottom: 16,
-    letterSpacing: -1,
-  },
-  heroSubtitle: {
-    fontSize: 18,
-    color: '#d1fae5',
-    marginBottom: 32,
-    lineHeight: 28,
-    fontWeight: '500',
-  },
-  heroButton: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignSelf: 'flex-start',
-  },
-  heroButtonText: {
-    color: '#059669',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  section: {
-    marginBottom: 32,
-  },
-  sectionTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#1c1917',
-    marginBottom: 24,
-    letterSpacing: -1,
-  },
-  emptyState: {
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-    borderRadius: 24,
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#78716c',
-    fontWeight: '500',
-  },
-  projectGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  projectCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(167, 243, 208, 0.5)',
-    width: '24.25%',
-    marginBottom: 8,
-  },
-  projectImageContainer: {
-    width: '100%',
-    height: 100,
-    backgroundColor: '#d1fae5',
-  },
-  projectImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  projectImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#d1fae5',
-  },
-  projectImagePlaceholderText: {
-    fontSize: 36,
-    opacity: 0.5,
-  },
-  dashboard: {
     marginBottom: 20,
+    paddingTop: 4,
   },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 8,
+  appTitle: { fontSize: 22, fontWeight: '900', color: '#10B981', letterSpacing: -0.5 },
+  topBarActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconButton: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: '#a7f3d0',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#fff',
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    alignItems: 'center',
+  avatarButton: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: '#a7f3d0',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: '#fff', overflow: 'hidden',
+  },  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#ef4444',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(167, 243, 208, 0.5)',
-    minHeight: 80,
-  },
-  statNumber: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: '#10B981',
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#065f46',
-    textAlign: 'center',
-    lineHeight: 13,
-  },
-  projectInfo: {
-    padding: 10,
-  },
-  projectTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1c1917',
-    marginBottom: 3,
-    letterSpacing: -0.3,
-  },
-  projectOwner: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#78716c',
-    marginBottom: 6,
-  },
-  tagContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginBottom: 6,
-  },
-  tag: {
-    backgroundColor: '#d1fae5',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
-  },
-  tagText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#065f46',
-  },
-  projectDescription: {
-    fontSize: 10,
-    color: '#57534e',
-    lineHeight: 14,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  matchScore: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#10B981',
-  },
-  deniedBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#fee2e2',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginBottom: 2,
-  },
-  deniedBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#ef4444',
-  },
-  logoutButton: {
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 32,
     alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#e6f7ed',
   },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#dc2626',
+  badgeText: { fontSize: 9, fontWeight: '800', color: '#fff' },  avatarImg: { width: '100%', height: '100%', borderRadius: 21 },
+  avatarInitials: { fontSize: 15, fontWeight: '800', color: '#065f46' },
+
+  // Greeting
+  greetingBlock: { marginBottom: 24 },
+  greetingHello: { fontSize: 30, fontWeight: '900', color: '#1c1917', letterSpacing: -0.8, marginBottom: 4 },
+  greetingSubtitle: { fontSize: 14, color: '#78716c', fontWeight: '500' },
+
+  // Stats
+  statsRow: { flexDirection: 'row', gap: 10, marginBottom: 32 },
+  statCard: {
+    flex: 1, borderRadius: 18,
+    paddingVertical: 16, paddingHorizontal: 10,
+    alignItems: 'center', gap: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07, shadowRadius: 6, elevation: 2,
   },
+  statCardGreen: { backgroundColor: '#d1fae5' },
+  statCardBlue: { backgroundColor: '#dbeafe' },
+  statCardAmber: { backgroundColor: '#fef3c7' },
+  statEmoji: { fontSize: 30 },
+  statNumber: { fontSize: 22, fontWeight: '900', color: '#1c1917' },
+  statLabel: { fontSize: 10, fontWeight: '600', color: '#57534e', textAlign: 'center', lineHeight: 14 },
+
+  // Sections
+  section: { marginBottom: 32 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  sectionTitle: { fontSize: 20, fontWeight: '800', color: '#1c1917', letterSpacing: -0.4, marginBottom: 14 },
+  newProjectLink: { fontSize: 14, fontWeight: '700', color: '#10B981' },
+
+  // Empty state
+  emptyCard: {
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderRadius: 16, padding: 24,
+    alignItems: 'center', gap: 12,
+  },
+  emptyText: { fontSize: 14, color: '#78716c', textAlign: 'center', lineHeight: 20 },
+  createButton: {
+    backgroundColor: '#10B981', borderRadius: 12,
+    paddingHorizontal: 20, paddingVertical: 10,
+  },
+  createButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+
+  // Recommended – horizontal scroll
+  horizontalScroll: { paddingRight: 4, gap: 12 },
+  recCard: {
+    width: 160, backgroundColor: '#fff', borderRadius: 18,
+    overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 8, elevation: 3,
+  },
+  recImageBox: { width: '100%', height: 100, backgroundColor: '#d1fae5', position: 'relative' },
+  recImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  recImagePlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  matchBadge: {
+    position: 'absolute', top: 6, right: 6,
+    backgroundColor: '#10B981', borderRadius: 8,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  matchBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  deniedBadge: {
+    position: 'absolute', top: 6, left: 6,
+    backgroundColor: '#fee2e2', borderRadius: 8,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  deniedBadgeText: { fontSize: 10 },
+  recInfo: { padding: 10, gap: 4 },
+  recTitle: { fontSize: 13, fontWeight: '700', color: '#1c1917', lineHeight: 18 },
+  recOwner: { fontSize: 10, color: '#78716c', fontWeight: '500' },
+
+  // See All card
+  seeAllCard: {
+    width: 80, backgroundColor: '#10B981', borderRadius: 18,
+    justifyContent: 'center', alignItems: 'center', gap: 4,
+    shadowColor: '#10B981', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25, shadowRadius: 8, elevation: 3,
+  },
+  seeAllArrow: { fontSize: 28, fontWeight: '800', color: '#fff' },
+  seeAllText: { fontSize: 11, fontWeight: '700', color: '#d1fae5' },
+
+  // Tags (shared)
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 2 },
+  tag: {
+    backgroundColor: '#d1fae5', borderRadius: 6,
+    paddingHorizontal: 6, paddingVertical: 2,
+    borderWidth: 1, borderColor: 'rgba(16,185,129,0.2)',
+  },
+  tagText: { fontSize: 9, fontWeight: '700', color: '#065f46' },
+
+  // My Projects list
+  myProjectsList: { gap: 10 },
+  myProjectRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff', borderRadius: 16,
+    padding: 12, gap: 12,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+  },
+  myProjectImageBox: {
+    width: 52, height: 52, borderRadius: 12,
+    backgroundColor: '#d1fae5', overflow: 'hidden',
+    justifyContent: 'center', alignItems: 'center', flexShrink: 0,
+  },
+  myProjectImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  myProjectImagePlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  myProjectInfo: { flex: 1, gap: 3 },
+  myProjectTitle: { fontSize: 14, fontWeight: '700', color: '#1c1917' },
+  myProjectDesc: { fontSize: 11, color: '#78716c', lineHeight: 15 },
+
 });

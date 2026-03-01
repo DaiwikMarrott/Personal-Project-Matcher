@@ -111,6 +111,7 @@ export default function ChatsScreen() {
                   params: {
                     chatId: chat.id,
                     projectTitle: chat.project_title || '',
+                    projectId: chat.project_id || '',
                     otherName: `${other?.first_name || ''} ${other?.last_name || ''}`.trim(),
                     otherProfileId: other?.id || '',
                     otherProfilePic: other?.profile_picture_url || '',
