@@ -1,16 +1,36 @@
 import { StyleSheet, View, ScrollView, TouchableOpacity, TextInput } from 'react-native';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'expo-router';
 
 export default function HomeScreen() {
-  const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut } = useAuth();
+  const router = useRouter();
+  const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, checkProfileExists } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [justSignedUp, setJustSignedUp] = useState(false);
+
+  // Check if user has a profile ONLY after signup
+  useEffect(() => {
+    const checkProfile = async () => {
+      if (user && justSignedUp) {
+        const { exists } = await checkProfileExists(user.id);
+        
+        if (!exists) {
+          // Redirect to profile creation only for new signups
+          router.push('/create-profile');
+        }
+        setJustSignedUp(false);
+      }
+    };
+
+    checkProfile();
+  }, [user, justSignedUp]);
 
   const handleAuth = async () => {
     try {
@@ -18,9 +38,13 @@ export default function HomeScreen() {
       setLoading(true);
       if (isSignUp) {
         await signUpWithEmail(email, password);
-        alert('Success! Check your email to verify your account.');
+        // Mark that this was a signup, not a login
+        setJustSignedUp(true);
+        alert('Success! Creating your account...');
       } else {
         await signInWithEmail(email, password);
+        // For login, don't redirect to profile creation
+        setJustSignedUp(false);
       }
     } catch (err: any) {
       setError(err.message || 'Authentication failed');
@@ -65,17 +89,20 @@ export default function HomeScreen() {
               Quick Actions
             </ThemedText>
             
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/profile')}>
               <ThemedText style={styles.actionEmoji}>👤</ThemedText>
               <ThemedText type="defaultSemiBold" style={styles.actionTitle}>
-                Create Your Profile
+                View Your Profile
               </ThemedText>
               <ThemedText style={styles.actionDescription}>
-                Tell us about your skills and interests
+                Update your skills and interests
               </ThemedText>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => router.push('/post')}
+            >
               <ThemedText style={styles.actionEmoji}>💡</ThemedText>
               <ThemedText type="defaultSemiBold" style={styles.actionTitle}>
                 Post a Project Idea
@@ -85,7 +112,10 @@ export default function HomeScreen() {
               </ThemedText>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => router.push('/explore')}
+            >
               <ThemedText style={styles.actionEmoji}>🔍</ThemedText>
               <ThemedText type="defaultSemiBold" style={styles.actionTitle}>
                 Find Matches

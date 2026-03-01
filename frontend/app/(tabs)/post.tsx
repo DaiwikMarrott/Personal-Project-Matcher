@@ -1,0 +1,512 @@
+import { StyleSheet, ScrollView, View, TouchableOpacity, TextInput, ActivityIndicator, Platform, KeyboardAvoidingView } from 'react-native';
+import { useState } from 'react';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'expo-router';
+
+// Use hardcoded URL for web, env variable for native
+const getApiUrl = () => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8000';
+  }
+  return process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:8000';
+};
+
+const API_URL = getApiUrl();
+
+export default function PostProjectScreen() {
+  const { user } = useAuth();
+  const router = useRouter();
+  
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [tags, setTags] = useState('');
+  const [duration, setDuration] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const validateForm = () => {
+    if (!title.trim()) {
+      setError('Please enter a project title');
+      return false;
+    }
+    
+    if (title.trim().length < 5) {
+      setError('Title must be at least 5 characters long');
+      return false;
+    }
+    
+    if (!description.trim()) {
+      setError('Please enter a project description');
+      return false;
+    }
+    
+    if (description.trim().length < 50) {
+      setError('Description must be at least 50 characters to generate a quality roadmap. Please provide more details about your project goals, required skills, and expected outcomes.');
+      return false;
+    }
+
+    if (description.trim().length > 2000) {
+      setError('Description is too long (max 2000 characters)');
+      return false;
+    }
+    
+    return true;
+  };
+
+  const handleSubmit = async () => {
+    if (!user) {
+      setError('You must be logged in to post a project');
+      return;
+    }
+
+    if (!validateForm()) {
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+
+    try {
+      const tagsArray = tags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0);
+
+      const projectData = {
+        owner_id: user.id,
+        title: title.trim(),
+        description: description.trim(),
+        tags: tagsArray,
+        duration: duration.trim() || null,
+      };
+
+      console.log('Submitting project:', projectData);
+
+      const response = await fetch(`${API_URL}/project`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(projectData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to create project');
+      }
+
+      const result = await response.json();
+      console.log('Project created:', result);
+
+      setSuccess(true);
+      setTitle('');
+      setDescription('');
+      setTags('');
+      setDuration('');
+
+      // Show success message for 2 seconds, then navigate to explore
+      setTimeout(() => {
+        setSuccess(false);
+        router.push('/explore');
+      }, 2000);
+
+    } catch (err: any) {
+      console.error('Error creating project:', err);
+      setError(err.message || 'Failed to create project. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClear = () => {
+    setTitle('');
+    setDescription('');
+    setTags('');
+    setDuration('');
+    setError('');
+  };
+
+  if (!user) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={styles.content}>
+          <ThemedText type="title" style={styles.title}>
+            Post a Project 💡
+          </ThemedText>
+          <View style={styles.errorCard}>
+            <ThemedText style={styles.errorText}>
+              Please sign in to post a project idea
+            </ThemedText>
+          </View>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (success) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={styles.content}>
+          <View style={styles.successCard}>
+            <ThemedText style={styles.successEmoji}>🎉</ThemedText>
+            <ThemedText type="subtitle" style={styles.successTitle}>
+              Project Created Successfully!
+            </ThemedText>
+            <ThemedText style={styles.successText}>
+              Dr. Jekyll is generating your AI-powered roadmap...
+            </ThemedText>
+            <ThemedText style={styles.successSubtext}>
+              Redirecting to explore...
+            </ThemedText>
+          </View>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={{ flex: 1 }}
+    >
+      <ScrollView style={styles.container}>
+        <ThemedView style={styles.content}>
+          <View style={styles.header}>
+            <ThemedText type="title" style={styles.title}>
+              Post a Project 💡
+            </ThemedText>
+            <ThemedText style={styles.subtitle}>
+              Share your vision - Dr. Jekyll will generate a technical roadmap
+            </ThemedText>
+          </View>
+
+          <View style={styles.infoCard}>
+            <ThemedText style={styles.infoEmoji}>🤖</ThemedText>
+            <ThemedText style={styles.infoText}>
+              Our AI will analyze your project and create a professional roadmap to help others understand how to contribute.
+            </ThemedText>
+          </View>
+
+          {error ? (
+            <View style={styles.errorCard}>
+              <ThemedText style={styles.errorText}>{error}</ThemedText>
+            </View>
+          ) : null}
+
+          <View style={styles.formSection}>
+            <View style={styles.inputGroup}>
+              <ThemedText style={styles.label}>
+                Project Title <ThemedText style={styles.required}>*</ThemedText>
+              </ThemedText>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., AI-Powered Health Tracker App"
+                placeholderTextColor="#999"
+                value={title}
+                onChangeText={setTitle}
+                maxLength={100}
+              />
+              <ThemedText style={styles.helper}>
+                {title.length}/100 characters
+              </ThemedText>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <ThemedText style={styles.label}>
+                Project Description <ThemedText style={styles.required}>*</ThemedText>
+              </ThemedText>
+              <ThemedText style={styles.helper}>
+                Be specific! Include: goals, required skills, target users, and key features.
+              </ThemedText>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder={`Example: "I want to build a mobile app that helps college students track their health metrics using AI. The app should:
+• Track daily exercise, sleep, and nutrition
+• Use machine learning to provide personalized recommendations
+• Have a clean, intuitive UI with data visualization
+• Integrate with wearable devices
+
+Looking for: Frontend developer (React Native), Backend developer (Python/FastAPI), and someone with ML experience."`}
+                placeholderTextColor="#999"
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={10}
+                maxLength={2000}
+                textAlignVertical="top"
+              />
+              <View style={styles.helperRow}>
+                <ThemedText style={[
+                  styles.helper,
+                  description.length < 50 && styles.helperWarning
+                ]}>
+                  {description.length}/2000 characters
+                </ThemedText>
+                {description.length < 50 && (
+                  <ThemedText style={styles.helperWarning}>
+                    (minimum 50 for AI roadmap)
+                  </ThemedText>
+                )}
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <ThemedText style={styles.label}>
+                Tags (Optional)
+              </ThemedText>
+              <ThemedText style={styles.helper}>
+                Comma-separated: e.g., "AI, Mobile, Health, React Native"
+              </ThemedText>
+              <TextInput
+                style={styles.input}
+                placeholder="AI, Mobile, Health, React Native"
+                placeholderTextColor="#999"
+                value={tags}
+                onChangeText={setTags}
+                maxLength={200}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <ThemedText style={styles.label}>
+                Project Duration (Optional)
+              </ThemedText>
+              <ThemedText style={styles.helper}>
+                How long do you expect this project to take?
+              </ThemedText>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., 2 weeks, 3 months, 1 semester"
+                placeholderTextColor="#999"
+                value={duration}
+                onChangeText={setDuration}
+                maxLength={50}
+              />
+            </View>
+
+            <View style={styles.buttonRow}>
+              <TouchableOpacity 
+                style={styles.clearButton} 
+                onPress={handleClear}
+                disabled={loading}
+              >
+                <ThemedText style={styles.clearButtonText}>Clear</ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[
+                  styles.submitButton,
+                  loading && styles.submitButtonDisabled
+                ]} 
+                onPress={handleSubmit}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <ThemedText style={styles.submitButtonText}>
+                    Create Project 🚀
+                  </ThemedText>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.tipsCard}>
+            <ThemedText type="defaultSemiBold" style={styles.tipsTitle}>
+              💡 Tips for a Great Project Post
+            </ThemedText>
+            <ThemedText style={styles.tipText}>
+              ✓ Be specific about what you want to build
+            </ThemedText>
+            <ThemedText style={styles.tipText}>
+              ✓ Mention required skills and technologies
+            </ThemedText>
+            <ThemedText style={styles.tipText}>
+              ✓ Explain the problem you're solving
+            </ThemedText>
+            <ThemedText style={styles.tipText}>
+              ✓ Include timeline or scope expectations
+            </ThemedText>
+            <ThemedText style={styles.tipText}>
+              ✓ The more detail, the better the AI roadmap!
+            </ThemedText>
+          </View>
+        </ThemedView>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+    paddingTop: 60,
+  },
+  header: {
+    marginBottom: 20,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    opacity: 0.7,
+  },
+  infoCard: {
+    backgroundColor: '#4A90E2',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  infoEmoji: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  infoText: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 14,
+  },
+  errorCard: {
+    backgroundColor: '#ff4444',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  errorText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  successCard: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 12,
+    padding: 32,
+    alignItems: 'center',
+    marginTop: 100,
+  },
+  successEmoji: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  successTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  successText: {
+    color: '#fff',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  successSubtext: {
+    color: '#fff',
+    fontSize: 14,
+    opacity: 0.8,
+    textAlign: 'center',
+  },
+  formSection: {
+    marginBottom: 20,
+  },
+  inputGroup: {
+    marginBottom: 24,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  required: {
+    color: '#ff4444',
+  },
+  helper: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginBottom: 8,
+  },
+  helperRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  helperWarning: {
+    color: '#ff9800',
+    fontWeight: '600',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    color: '#000',
+  },
+  textArea: {
+    minHeight: 200,
+    paddingTop: 12,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  clearButton: {
+    flex: 1,
+    backgroundColor: '#6c757d',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+  },
+  clearButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  submitButton: {
+    flex: 2,
+    backgroundColor: '#4A90E2',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center',
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  tipsCard: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 40,
+  },
+  tipsTitle: {
+    fontSize: 16,
+    marginBottom: 12,
+    color: '#000',
+  },
+  tipText: {
+    fontSize: 14,
+    marginBottom: 6,
+    color: '#000',
+    opacity: 0.8,
+  },
+});

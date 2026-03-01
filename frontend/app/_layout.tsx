@@ -18,6 +18,8 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="create-profile" options={{ headerShown: true, title: 'Create Profile', headerBackVisible: false }} />
+          <Stack.Screen name="profile" options={{ headerShown: true, title: 'Profile' }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
         <StatusBar style="auto" />

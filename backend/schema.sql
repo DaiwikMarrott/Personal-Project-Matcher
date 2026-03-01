@@ -4,6 +4,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Profiles table
 CREATE TABLE profiles (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    auth_user_id UUID UNIQUE NOT NULL, -- Links to auth.users(id) in Supabase Auth
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -14,6 +15,7 @@ CREATE TABLE profiles (
     experience_level VARCHAR(50) CHECK (experience_level IN ('beginner', 'intermediate', 'advanced', 'expert')),
     availability JSONB DEFAULT '{}', -- e.g., {"hours_per_week": 10, "timezone": "PST"}
     urls JSONB DEFAULT '{}', -- e.g., {"github": "...", "linkedin": "...", "discord": "..."}
+    profile_picture_url TEXT, -- URL to profile picture in Supabase Storage
     bio_embedding VECTOR(768), -- 768-dimensional embedding for semantic matching
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -26,6 +28,7 @@ CREATE TABLE projects (
     title VARCHAR(300) NOT NULL,
     description TEXT NOT NULL,
     tags TEXT[],
+    duration VARCHAR(100), -- Expected project duration (e.g., "2 weeks", "3 months")
     roadmap JSONB DEFAULT '{}', -- AI-generated technical roadmap
     project_embedding VECTOR(768), -- 768-dimensional embedding for semantic matching
     status VARCHAR(50) DEFAULT 'open' CHECK (status IN ('open', 'in-progress', 'completed', 'closed')),
@@ -34,6 +37,7 @@ CREATE TABLE projects (
 );
 
 -- Create indexes for better query performance
+CREATE INDEX idx_profiles_auth_user_id ON profiles(auth_user_id);
 CREATE INDEX idx_profiles_email ON profiles(email);
 CREATE INDEX idx_profiles_major ON profiles(major);
 CREATE INDEX idx_projects_owner_id ON projects(owner_id);

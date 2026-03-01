@@ -1,7 +1,7 @@
 """
 FastAPI Backend for Project Jekyll & Hyde
 """
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 import os
 import logging
 import google.generativeai as genai
+import base64
+import mimetypes
 
 from ai_service import generate_project_roadmap, generate_embedding
 
@@ -59,6 +61,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 # Pydantic Models
 class ProfileCreate(BaseModel):
+    auth_user_id: str  # Supabase auth.users ID
     first_name: str
     last_name: str
     email: EmailStr
@@ -69,6 +72,7 @@ class ProfileCreate(BaseModel):
     experience_level: Optional[str] = "beginner"
     availability: Optional[Dict[str, Any]] = {}
     urls: Optional[Dict[str, str]] = {}
+    profile_picture_url: Optional[str] = None
 
 
 class ProfileResponse(BaseModel):
@@ -79,13 +83,18 @@ class ProfileResponse(BaseModel):
     major: Optional[str]
     skills: Optional[List[str]]
     experience_level: Optional[str]
+    profile_picture_url: Optional[str]
+    interests: Optional[str]
+    availability: Optional[Dict[str, Any]]
+    urls: Optional[Dict[str, str]]
 
 
 class ProjectCreate(BaseModel):
-    owner_id: str
+    owner_id: str  # Can be either profile.id or auth_user_id (will be looked up)
     title: str
     description: str
     tags: Optional[List[str]] = []
+    duration: Optional[str] = None
 
 
 class ProjectResponse(BaseModel):
@@ -94,6 +103,7 @@ class ProjectResponse(BaseModel):
     title: str
     description: str
     tags: Optional[List[str]]
+    duration: Optional[str]
     roadmap: Optional[Dict[str, Any]]
     status: str
 
@@ -116,22 +126,129 @@ async def root():
     }
 
 
+# Upload Profile Picture
+@app.post("/upload-avatar/{user_id}")
+async def upload_avatar(user_id: str, file: UploadFile = File(...)):
+    """
+    Upload a profile picture to Supabase Storage.
+    Returns the public URL of the uploaded image.
+    """
+    try:
+        # Validate file type
+        allowed_types = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File type {file.content_type} not allowed. Use JPEG, PNG, WebP, or GIF."
+            )
+        
+        # Validate file size (5MB max)
+        file_content = await file.read()
+        if len(file_content) > 5 * 1024 * 1024:  # 5MB
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File size must be less than 5MB"
+            )
+        
+        # Upload to Supabase Storage
+        file_path = f"{user_id}/avatar.jpg"
+        
+        try:
+            storage_response = supabase.storage.from_("avatars").upload(
+                file_path,
+                file_content,
+                {"content-type": file.content_type, "upsert": "true"}
+            )
+            
+            logger.info(f"Storage response: {storage_response}")
+            
+        except Exception as storage_error:
+            logger.error(f"Storage upload error: {str(storage_error)}")
+            # Check if it's a bucket/policy issue
+            if "not found" in str(storage_error).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Storage bucket not configured. Please run STORAGE_POLICIES.sql in Supabase SQL Editor."
+                )
+            raise
+        
+        # Get public URL
+        public_url = supabase.storage.from_("avatars").get_public_url(file_path)
+        
+        logger.info(f"Successfully uploaded avatar for user {user_id}, URL: {public_url}")
+        
+        return {
+            "url": public_url,
+            "message": "Avatar uploaded successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading avatar: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error uploading avatar: {str(e)}"
+        )
+
+
+# Check if user has profile
+@app.get("/profile/check/{auth_user_id}")
+async def check_profile_exists(auth_user_id: str):
+    """
+    Check if a user has created a profile.
+    Returns profile data if exists, or indicates profile doesn't exist.
+    """
+    try:
+        response = supabase.table("profiles").select("*").eq("auth_user_id", auth_user_id).execute()
+        
+        if response.data and len(response.data) > 0:
+            return {
+                "exists": True,
+                "profile": response.data[0]
+            }
+        else:
+            return {
+                "exists": False,
+                "profile": None
+            }
+    
+    except Exception as e:
+        logger.error(f"Error checking profile: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error checking profile: {str(e)}"
+        )
+
+
 # Create Profile Endpoint
 @app.post("/profile", response_model=ProfileResponse, status_code=status.HTTP_201_CREATED)
 async def create_profile(profile: ProfileCreate):
     """
     Create a new user profile with AI-generated embedding for semantic matching.
+    The auth_user_id should match the Supabase auth.users.id.
     """
     try:
+        logger.info(f"Creating profile for user {profile.auth_user_id}")
+        
+        # Check if profile already exists
+        existing = supabase.table("profiles").select("id").eq("auth_user_id", profile.auth_user_id).execute()
+        if existing.data and len(existing.data) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Profile already exists for this user"
+            )
+        
         # Generate bio text for embedding
         bio_text = f"{profile.major or ''} {profile.interests or ''} {' '.join(profile.skills or [])}".strip()
         
         # Generate embedding using Gemini
-        bio_embedding = await generate_embedding(bio_text)
+        bio_embedding = await generate_embedding(bio_text) if bio_text else None
         
         # Insert into Supabase
         data = profile.dict()
-        data['bio_embedding'] = bio_embedding
+        if bio_embedding:
+            data['bio_embedding'] = bio_embedding
         
         response = supabase.table("profiles").insert(data).execute()
         
@@ -141,9 +258,13 @@ async def create_profile(profile: ProfileCreate):
                 detail="Failed to create profile"
             )
         
+        logger.info(f"Successfully created profile with ID {response.data[0]['id']}")
         return response.data[0]
     
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Error creating profile: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating profile: {str(e)}"
@@ -155,21 +276,45 @@ async def create_profile(profile: ProfileCreate):
 async def create_project(project: ProjectCreate):
     """
     Create a new project with AI-generated roadmap and embedding for semantic matching.
+    owner_id can be either the profile.id or auth_user_id (will be looked up automatically).
     """
     try:
+        logger.info(f"Creating project for owner_id: {project.owner_id}")
+        
+        # First, try to look up the profile by owner_id (could be profile.id or auth_user_id)
+        profile_response = supabase.table("profiles").select("id").eq("id", project.owner_id).execute()
+        
+        if not profile_response.data or len(profile_response.data) == 0:
+            # If not found by profile.id, try looking up by auth_user_id
+            logger.info(f"Profile not found by id, trying auth_user_id lookup")
+            profile_response = supabase.table("profiles").select("id").eq("auth_user_id", project.owner_id).execute()
+        
+        if not profile_response.data or len(profile_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Profile not found for owner_id: {project.owner_id}. Please create your profile first at /profile endpoint."
+            )
+        
+        actual_profile_id = profile_response.data[0]['id']
+        logger.info(f"Resolved profile.id: {actual_profile_id}")
+        
         # Generate project roadmap using Gemini
+        logger.info("Generating AI roadmap...")
         roadmap = await generate_project_roadmap(project.title, project.description)
         
         # Generate embedding for semantic matching
+        logger.info("Generating embeddings...")
         project_text = f"{project.title} {project.description} {' '.join(project.tags or [])}".strip()
         project_embedding = await generate_embedding(project_text)
         
-        # Insert into Supabase
+        # Insert into Supabase with the actual profile.id
         data = project.dict()
+        data['owner_id'] = actual_profile_id  # Use the resolved profile.id
         data['roadmap'] = roadmap
         data['project_embedding'] = project_embedding
         data['status'] = 'open'
         
+        logger.info("Inserting project into database...")
         response = supabase.table("projects").insert(data).execute()
         
         if not response.data:
@@ -178,9 +323,13 @@ async def create_project(project: ProjectCreate):
                 detail="Failed to create project"
             )
         
+        logger.info(f"Project created successfully with id: {response.data[0]['id']}")
         return response.data[0]
     
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Error creating project: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating project: {str(e)}"
