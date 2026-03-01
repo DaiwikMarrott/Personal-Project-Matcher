@@ -1,7 +1,10 @@
-"""
+""" 
 AI Service for Project Jekyll & Hyde
 Handles AI tasks: roadmap generation, embeddings, and voice generation
 """
+import warnings
+# Suppress the deprecation warning for google.generativeai
+warnings.filterwarnings('ignore', message='All support for the.*google.generativeai.*package has ended')
 import google.generativeai as genai
 import json
 from typing import Dict, Any, List

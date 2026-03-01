@@ -6,12 +6,9 @@ import React, { createContext, useState, useEffect, useContext, ReactNode } from
 import { createClient, Session, User, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { API_BASE_URL } from '../services/api';
 
-const API_URL = Platform.OS === 'web' 
-  ? 'http://localhost:8000' 
-  : Platform.OS === 'android' 
-    ? 'http://10.0.2.2:8000' 
-    : 'http://localhost:8000';
+console.log('[AuthContext] API_BASE_URL imported:', API_BASE_URL);
 
 // Initialize Supabase client
 // Use hardcoded fallbacks for development if env vars aren't loaded
@@ -43,7 +40,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signInWithEmail: (email: string, password: string) => Promise<void>;
-  signUpWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string) => Promise<any>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
@@ -68,6 +65,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Cache profile checks to avoid hammering the API
+  const [profileCache, setProfileCache] = useState<{
+    userId: string | null;
+    data: { exists: boolean; profile: any | null } | null;
+    timestamp: number;
+  }>({ userId: null, data: null, timestamp: 0 });
 
   useEffect(() => {
     // Check active session
@@ -101,15 +105,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signInWithEmail = async (email: string, password: string) => {
     try {
+      console.log('AuthContext: Attempting sign in...');
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('AuthContext: Sign in error:', error);
+        throw error;
+      }
 
+      console.log('AuthContext: Sign in successful, setting session...');
       setSession(data.session);
       setUser(data.user);
+      console.log('AuthContext: User set:', data.user?.email);
     } catch (error: any) {
       console.error('Error signing in with email:', error.message);
       throw error;
@@ -118,15 +128,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signUpWithEmail = async (email: string, password: string) => {
     try {
+      console.log('AuthContext: Attempting sign up...');
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          emailRedirectTo: undefined,
+        }
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('AuthContext: Sign up error:', error);
+        throw error;
+      }
 
-      // Note: User will need to verify email before logging in
-      console.log('Sign up successful. Please check your email for verification.');
+      console.log('AuthContext: Sign up successful');
+      console.log('User:', data.user?.email);
+      
+      // If email confirmation is required, user will be null
+      if (data.user && !data.session) {
+        console.log('Email confirmation required - check your email');
+      }
+      
+      return data;
     } catch (error: any) {
       console.error('Error signing up with email:', error.message);
       throw error;
@@ -158,6 +182,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       setUser(null);
       setSession(null);
+      // Clear profile cache on logout
+      setProfileCache({ userId: null, data: null, timestamp: 0 });
     } catch (error: any) {
       console.error('Error signing out:', error.message);
       throw error;
@@ -179,16 +205,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const checkProfileExists = async (userId: string): Promise<{ exists: boolean; profile: any | null }> => {
+  const checkProfileExists = async (userId: string, forceRefresh: boolean = false): Promise<{ exists: boolean; profile: any | null }> => {
     try {
-      const response = await fetch(`${API_URL}/profile/check/${userId}`);
+      const now = Date.now();
+      const cacheAge = now - profileCache.timestamp;
+      const CACHE_DURATION = 10000; // 10 seconds cache
+      
+      // Return cached data if it exists, matches the user, is recent, and not forcing refresh
+      if (!forceRefresh && 
+          profileCache.userId === userId && 
+          profileCache.data && 
+          cacheAge < CACHE_DURATION) {
+        console.log('[AuthContext] Returning cached profile (age:', Math.round(cacheAge / 1000), 'seconds)');
+        return profileCache.data;
+      }
+
+      console.log('[AuthContext] Checking profile for user:', userId);
+      const response = await fetch(`${API_BASE_URL}/profile/check/${userId}`);
+      console.log('[AuthContext] Profile check response status:', response.status);
       if (!response.ok) {
         throw new Error('Failed to check profile');
       }
       const data = await response.json();
+      console.log('[AuthContext] Profile check result:', data);
+      
+      // Cache the result
+      setProfileCache({
+        userId,
+        data,
+        timestamp: now
+      });
+      
       return data;
     } catch (error: any) {
-      console.error('Error checking profile:', error.message);
+      console.error('[AuthContext] Error checking profile:', error.message);
       return { exists: false, profile: null };
     }
   };

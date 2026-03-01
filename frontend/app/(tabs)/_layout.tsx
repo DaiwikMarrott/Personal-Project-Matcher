@@ -21,11 +21,12 @@ export default function TabLayout() {
           borderTopWidth: 1,
         },
         headerStyle: {
-          backgroundColor: '#e6f7ed',
+          backgroundColor: '#10B981',
         },
-        headerTintColor: '#1c1917',
+        headerTintColor: '#fff',
         headerTitleStyle: {
-          fontWeight: '900',
+          fontWeight: '700',
+          fontSize: 20,
         },
       }}>
       <Tabs.Screen
@@ -33,7 +34,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           headerTitle: 'Projects Matcher',
-          headerShown: false,  // Hide default header, we're using custom
+          headerShown: false,  // Custom header in home screen
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
@@ -41,8 +42,7 @@ export default function TabLayout() {
         name="explore"
         options={{
           title: 'Discover',
-          headerTitle: 'Projects Matcher',
-          headerShown: false,  // Hide default header, we're using custom
+          headerTitle: 'Discover Projects',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="magnifyingglass" color={color} />,
         }}
       />
@@ -50,8 +50,7 @@ export default function TabLayout() {
         name="post"
         options={{
           title: 'Post Idea',
-          headerTitle: 'Projects Matcher',
-          headerShown: false,  // Hide default header, we're using custom
+          headerTitle: 'Post Project',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="plus.circle.fill" color={color} />,
         }}
       />
@@ -59,8 +58,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          headerTitle: 'Projects Matcher',
-          headerShown: false,  // Hide default header, we're using custom
+          headerTitle: 'My Profile',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
         }}
       />
