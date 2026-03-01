@@ -2,7 +2,7 @@
  * Profile Tab Screen
  * View and edit user profile — combined in one screen
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -16,11 +16,6 @@ import {
   Platform,
   Alert,
   Animated,
-} from 'react-native';
-import { useState, useEffect, useRef } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-  Alert,
-  Platform,
 } from 'react-native';
 import { useAuth, supabase } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
