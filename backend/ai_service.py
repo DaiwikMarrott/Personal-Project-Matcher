@@ -63,7 +63,8 @@ Return ONLY valid JSON, no markdown formatting or explanations.
 """
         
         # Use Gemini to generate the roadmap
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Using gemini-1.5-flash-latest - cheapest and fastest model
+        model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(prompt)
         
         # Parse the response
@@ -191,7 +192,7 @@ Generate a short, energetic hype script (2-3 sentences max) that:
 Use high-energy language. Be enthusiastic but authentic.
 """
         
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
         response = model.generate_content(prompt)
         
         return response.text.strip()

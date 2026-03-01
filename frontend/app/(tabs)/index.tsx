@@ -3,9 +3,11 @@ import { useState } from 'react';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
+import { useRouter } from 'expo-router';
 
 export default function HomeScreen() {
   const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut } = useAuth();
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
@@ -75,7 +77,10 @@ export default function HomeScreen() {
               </ThemedText>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => router.push('/post')}
+            >
               <ThemedText style={styles.actionEmoji}>💡</ThemedText>
               <ThemedText type="defaultSemiBold" style={styles.actionTitle}>
                 Post a Project Idea
@@ -85,7 +90,10 @@ export default function HomeScreen() {
               </ThemedText>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionCard}>
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => router.push('/explore')}
+            >
               <ThemedText style={styles.actionEmoji}>🔍</ThemedText>
               <ThemedText type="defaultSemiBold" style={styles.actionTitle}>
                 Find Matches
