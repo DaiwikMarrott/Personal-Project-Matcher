@@ -443,6 +443,7 @@ export interface Notification {
   message?: string;
   read: boolean;
   created_at: string;
+  reference_id?: string;
   sender_first_name?: string;
   sender_last_name?: string;
   sender_profile_picture_url?: string;
@@ -558,3 +559,206 @@ export async function markAllNotificationsRead(
     return { error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
+
+// ─── Request Review ───────────────────────────────────────────────────────────
+
+export interface RequestDetails {
+  notification: Notification;
+  requester: Profile;
+  project: Project;
+}
+
+export async function getRequestDetails(
+  notificationId: string
+): Promise<ApiResponse<RequestDetails>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/notifications/${notificationId}/request-details`);
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to fetch request details' };
+    }
+    return { data: await response.json() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function approveRequest(
+  projectId: string,
+  requesterId: string,
+  ownerId: string,
+  notificationId: string
+): Promise<ApiResponse<{ success: boolean; chat_id: string; message: string }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/approve/${requesterId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner_id: ownerId, notification_id: notificationId }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to approve request' };
+    }
+    return { data: await response.json() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function denyRequest(
+  projectId: string,
+  requesterId: string,
+  ownerId: string,
+  notificationId: string
+): Promise<ApiResponse<{ success: boolean; message: string }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/deny/${requesterId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner_id: ownerId, notification_id: notificationId }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to deny request' };
+    }
+    return { data: await response.json() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export interface DeniedUser {
+  id: string;
+  project_id: string;
+  denied_user_id: string;
+  denied_at: string;
+  denied_user?: Profile;
+}
+
+export async function getProjectDenials(
+  projectId: string,
+  ownerId: string
+): Promise<ApiResponse<{ denials: DeniedUser[]; count: number }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/denials?owner_id=${ownerId}`);
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to fetch denials' };
+    }
+    return { data: await response.json() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function removeProjectDenial(
+  projectId: string,
+  userId: string,
+  ownerId: string
+): Promise<ApiResponse<{ success: boolean; message: string }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/denials/${userId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner_id: ownerId }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to remove denial' };
+    }
+    return { data: await response.json() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function getDeniedProjectIds(
+  profileId: string
+): Promise<ApiResponse<{ denied_project_ids: string[] }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/profile/${profileId}/denied-project-ids`);
+    if (!response.ok) {
+      return { error: 'Failed to fetch denied project ids' };
+    }
+    return { data: await response.json() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+// ─── Chats ────────────────────────────────────────────────────────────────────
+
+export interface ChatMessage {
+  id: string;
+  chat_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
+  read: boolean;
+}
+
+export interface Chat {
+  id: string;
+  project_id?: string;
+  project_title?: string;
+  participant1_id: string;
+  participant2_id: string;
+  created_at: string;
+  last_message_at: string;
+  other_participant?: Profile;
+  last_message?: { content: string; created_at: string; sender_id: string };
+  unread_count?: number;
+}
+
+export async function getUserChats(
+  profileId: string
+): Promise<ApiResponse<{ chats: Chat[]; count: number }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/profile/${profileId}/chats`);
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to fetch chats' };
+    }
+    return { data: await response.json() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function getChatMessages(
+  chatId: string,
+  profileId: string
+): Promise<ApiResponse<{ messages: ChatMessage[]; count: number }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/chat/${chatId}/messages?profile_id=${profileId}`);
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to fetch messages' };
+    }
+    return { data: await response.json() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+export async function sendChatMessage(
+  chatId: string,
+  senderId: string,
+  content: string
+): Promise<ApiResponse<{ success: boolean; message: ChatMessage }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/chat/${chatId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sender_id: senderId, content }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to send message' };
+    }
+    return { data: await response.json() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+

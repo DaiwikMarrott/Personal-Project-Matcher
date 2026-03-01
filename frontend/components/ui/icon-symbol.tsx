@@ -23,6 +23,9 @@ const MAPPING = {
   'plus.circle.fill': 'add-circle',
   'person.fill': 'person',
   'bell.fill': 'notifications',
+  'bubble.left.and.bubble.right.fill': 'forum',
+  'checkmark.circle.fill': 'check-circle',
+  'xmark.circle.fill': 'cancel',
 } as IconMapping;
 
 /**
