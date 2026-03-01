@@ -49,13 +49,21 @@ export default function HomeScreen() {
       if (userProfile?.id) {
         const result = await getRecommendedProjects(userProfile.id, 10);
         if (result.data) {
-          setRecommendedProjects(result.data);
+          // Filter out user's own projects
+          const filteredProjects = result.data.filter(
+            (project: any) => project.owner_id !== userProfile.id
+          );
+          setRecommendedProjects(filteredProjects);
         }
       } else {
         // Fallback: load all open projects
         const result = await getProjects({ status: 'open', limit: 10 });
         if (result.data) {
-          setRecommendedProjects(result.data);
+          // Filter out user's own projects if profile exists
+          const filteredProjects = userProfile?.id 
+            ? result.data.filter((project: any) => project.owner_id !== userProfile.id)
+            : result.data;
+          setRecommendedProjects(filteredProjects);
         }
       }
     } catch (error) {
@@ -86,9 +94,16 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.mainContainer}>
-      {/* Custom Header with Profile Button */}
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />
+        }
+      >
+      {/* Scrollable Header with Profile Button */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>collabb</Text>
+        <Text style={styles.headerTitle}>Projects Matcher</Text>
         <TouchableOpacity
           style={styles.profileButton}
           onPress={() => router.push('/(tabs)/profile')}
@@ -104,14 +119,24 @@ export default function HomeScreen() {
           )}
         </TouchableOpacity>
       </View>
+      {/* Dashboard Stats */}
+      <View style={styles.dashboard}>
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{recommendedProjects.length}</Text>
+            <Text style={styles.statLabel}>Matches</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>🎯</Text>
+            <Text style={styles.statLabel}>AI Powered</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>💡</Text>
+            <Text style={styles.statLabel}>Smart Collab</Text>
+          </View>
+        </View>
+      </View>
 
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />
-        }
-      >
       {/* Hero Section */}
       <View style={styles.hero}>
         <Text style={styles.heroTitle}>✨ Find the best match for your project</Text>
@@ -149,25 +174,31 @@ export default function HomeScreen() {
                   });
                 }}
               >
-                <View style={styles.projectCardContent}>
-                  <View style={styles.projectThumbnail}>
-                    {project.project_image_url ? (
-                      <Image
-                        source={{ uri: project.project_image_url }}
-                        style={styles.thumbnailImage}
-                      />
-                    ) : (
-                      <Text style={styles.thumbnailText}>📁</Text>
-                    )}
-                  </View>
-                  <View style={styles.projectInfo}>
-                    <Text style={styles.projectTitle}>{project.title}</Text>
-                    {project.owner_id && (
-                      <Text style={styles.projectOwner}>by {project.owner_id.substring(0, 8)}...</Text>
+                {/* Project Image */}
+                <View style={styles.projectImageContainer}>
+                  {project.project_image_url ? (
+                    <Image
+                      source={{ uri: project.project_image_url }}
+                      style={styles.projectImage}
+                    />
+                  ) : (
+                    <View style={styles.projectImagePlaceholder}>
+                      <Text style={styles.projectImagePlaceholderText}>📁</Text>
+                    </View>
+                  )}
+                </View>
+                
+                {/* Project Info */}
+                <View style={styles.projectInfo}>
+                  <Text style={styles.projectTitle} numberOfLines={2}>{project.title}</Text>
+                    {(project.owner_name || project.owner_first_name) && (
+                      <Text style={styles.projectOwner}>
+                        by {project.owner_name || `${project.owner_first_name} ${project.owner_last_name || ''}`.trim()}
+                      </Text>
                     )}
                     {project.tags && project.tags.length > 0 && (
                       <View style={styles.tagContainer}>
-                        {project.tags.slice(0, 3).map((tag: string, index: number) => (
+                        {project.tags.slice(0, 2).map((tag: string, index: number) => (
                           <View key={index} style={styles.tag}>
                             <Text style={styles.tagText}>{tag}</Text>
                           </View>
@@ -175,7 +206,7 @@ export default function HomeScreen() {
                       </View>
                     )}
                     {project.description && (
-                      <Text style={styles.projectDescription} numberOfLines={2}>
+                      <Text style={styles.projectDescription} numberOfLines={1}>
                         {project.description}
                       </Text>
                     )}
@@ -184,7 +215,6 @@ export default function HomeScreen() {
                         {Math.round(project.similarity_score * 100)}% Match
                       </Text>
                     )}
-                  </View>
                 </View>
               </TouchableOpacity>
             ))}
@@ -214,11 +244,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#e6f7ed',
-    borderBottomWidth: 2,
-    borderBottomColor: '#a7f3d0',
+    marginBottom: 8,
   },
   headerTitle: {
     fontSize: 28,
@@ -309,82 +336,114 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   projectGrid: {
-    gap: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'space-between',
   },
   projectCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 24,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(167, 243, 208, 0.5)',
+    width: '23.5%',
+    marginBottom: 8,
+  },
+  projectImageContainer: {
+    width: '100%',
+    height: 100,
+    backgroundColor: '#d1fae5',
+  },
+  projectImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  projectImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#d1fae5',
+  },
+  projectImagePlaceholderText: {
+    fontSize: 36,
+    opacity: 0.5,
+  },
+  dashboard: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 20,
     padding: 16,
+    alignItems: 'center',
     borderWidth: 2,
     borderColor: 'rgba(167, 243, 208, 0.5)',
   },
-  projectCardContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+  statNumber: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#10B981',
+    marginBottom: 4,
   },
-  projectThumbnail: {
-    width: 60,
-    height: 60,
-    borderRadius: 16,
-    backgroundColor: '#d1fae5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: '#10B981',
-  },
-  thumbnailText: {
-    fontSize: 28,
-  },
-  thumbnailImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 14,
+  statLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#065f46',
+    textAlign: 'center',
   },
   projectInfo: {
-    flex: 1,
+    padding: 10,
   },
   projectTitle: {
-    fontSize: 20,
+    fontSize: 13,
     fontWeight: '700',
     color: '#1c1917',
-    marginBottom: 8,
-    letterSpacing: -0.5,
+    marginBottom: 3,
+    letterSpacing: -0.3,
   },
   projectOwner: {
-    fontSize: 14,
+    fontSize: 10,
     fontWeight: '500',
     color: '#78716c',
-    marginBottom: 24,
+    marginBottom: 6,
   },
   tagContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 24,
+    gap: 4,
+    marginBottom: 6,
   },
   tag: {
     backgroundColor: '#d1fae5',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.2)',
   },
   tagText: {
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: '700',
     color: '#065f46',
   },
   projectDescription: {
-    fontSize: 16,
+    fontSize: 10,
     color: '#57534e',
-    lineHeight: 24,
+    lineHeight: 14,
     fontWeight: '500',
+    marginBottom: 4,
   },
   matchScore: {
-    marginTop: 16,
-    fontSize: 14,
+    fontSize: 10,
     fontWeight: '700',
     color: '#10B981',
   },

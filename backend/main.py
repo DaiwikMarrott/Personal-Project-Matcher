@@ -214,6 +214,74 @@ async def upload_avatar(user_id: str, file: UploadFile = File(...)):
         )
 
 
+# Upload Project Image
+@app.post("/upload-project-image/{user_id}")
+async def upload_project_image(user_id: str, file: UploadFile = File(...)):
+    """
+    Upload a project image to Supabase Storage.
+    Returns the public URL of the uploaded image.
+    """
+    try:
+        # Validate file type
+        allowed_types = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File type {file.content_type} not allowed. Use JPEG, PNG, WebP, or GIF."
+            )
+        
+        # Validate file size (10MB max for project images)
+        file_content = await file.read()
+        if len(file_content) > 10 * 1024 * 1024:  # 10MB
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File size must be less than 10MB"
+            )
+        
+        # Upload to Supabase Storage
+        import uuid
+        file_ext = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+        file_path = f"{user_id}/{uuid.uuid4()}.{file_ext}"
+        
+        try:
+            storage_response = supabase.storage.from_("project-images").upload(
+                file_path,
+                file_content,
+                {"content-type": file.content_type}
+            )
+            
+            logger.info(f"Storage response: {storage_response}")
+            
+        except Exception as storage_error:
+            logger.error(f"Storage upload error: {str(storage_error)}")
+            # Check if it's a bucket/policy issue
+            if "not found" in str(storage_error).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Storage bucket 'project-images' not configured. Please create it in Supabase Storage."
+                )
+            raise
+        
+        # Get public URL
+        public_url = supabase.storage.from_("project-images").get_public_url(file_path)
+        
+        logger.info(f"Successfully uploaded project image for user {user_id}, URL: {public_url}")
+        
+        return {
+            "url": public_url,
+            "message": "Project image uploaded successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading project image: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error uploading project image: {str(e)}"
+        )
+
+
 # Check if user has profile
 @app.get("/profile/check/{auth_user_id}")
 async def check_profile_exists(auth_user_id: str):
@@ -297,6 +365,68 @@ async def create_profile(profile: ProfileCreate):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating profile: {str(e)}"
+        )
+
+
+@app.put("/profile/{auth_user_id}", response_model=ProfileResponse)
+async def update_profile(auth_user_id: str, updates: dict):
+    """
+    Update an existing profile. Only updates provided fields.
+    Regenerates AI summary and embedding if relevant fields change.
+    """
+    try:
+        logger.info(f"Updating profile for user {auth_user_id}")
+        
+        # Check if profile exists
+        existing = supabase.table("profiles").select("*").eq("auth_user_id", auth_user_id).execute()
+        if not existing.data or len(existing.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Profile not found"
+            )
+        
+        profile_id = existing.data[0]['id']
+        
+        # Check if we need to regenerate AI summary (if key fields changed)
+        regenerate_fields = ['skills', 'interests', 'experience_level', 'major']
+        should_regenerate = any(field in updates for field in regenerate_fields)
+        
+        if should_regenerate:
+            # Merge existing data with updates for AI summary generation
+            merged_data = {**existing.data[0], **updates}
+            
+            logger.info("Regenerating AI summary due to field changes...")
+            ai_summary = await generate_profile_summary(merged_data)
+            logger.info(f"AI Summary regenerated: {ai_summary[:100]}...")
+            
+            logger.info("Regenerating embedding from new AI summary...")
+            bio_embedding = await generate_embedding(ai_summary) if ai_summary else None
+            logger.info(f"Embedding regenerated with {len(bio_embedding) if bio_embedding else 0} dimensions")
+            
+            if bio_embedding:
+                updates['bio_embedding'] = bio_embedding
+            if ai_summary:
+                updates['profile_ai_summary'] = ai_summary
+        
+        # Update in Supabase
+        response = supabase.table("profiles").update(updates).eq("id", profile_id).execute()
+        
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update profile"
+            )
+        
+        logger.info(f"Successfully updated profile {profile_id}")
+        return response.data[0]
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating profile: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating profile: {str(e)}"
         )
 
 
@@ -435,7 +565,7 @@ async def find_matches(match_request: MatchRequest):
 async def get_recommended_projects(profile_id: str, limit: int = 10):
     """
     Get top recommended projects for a user based on their profile.
-    Returns open projects sorted by match score (highest first).
+    Returns open projects sorted by match score (highest first) with owner information.
     """
     try:
         logger.info(f"Getting recommended projects for profile {profile_id}")
@@ -467,11 +597,26 @@ async def get_recommended_projects(profile_id: str, limit: int = 10):
         open_projects = [p for p in projects if p.get('status') == 'open' and p.get('id')]
         open_projects.sort(key=lambda x: x.get('similarity', 0), reverse=True)
         
-        logger.info(f"Returning {len(open_projects[:limit])} recommended projects")
+        # Enrich projects with owner information
+        enriched_projects = []
+        for project in open_projects[:limit]:
+            try:
+                # Fetch owner profile
+                owner_response = supabase.table("profiles").select("first_name, last_name").eq("id", project['owner_id']).execute()
+                if owner_response.data and len(owner_response.data) > 0:
+                    owner = owner_response.data[0]
+                    project['owner_first_name'] = owner.get('first_name', '')
+                    project['owner_last_name'] = owner.get('last_name', '')
+                enriched_projects.append(project)
+            except Exception as e:
+                logger.warning(f"Error fetching owner for project {project.get('id')}: {str(e)}")
+                enriched_projects.append(project)
+        
+        logger.info(f"Returning {len(enriched_projects)} recommended projects with owner info")
         
         return {
             "profile_id": profile_id,
-            "recommended_projects": open_projects[:limit]
+            "recommended_projects": enriched_projects
         }
     
     except Exception as e:
@@ -533,9 +678,20 @@ async def get_project(project_id: str):
 
 # Update a project
 @app.put("/project/{project_id}", response_model=ProjectResponse)
-async def update_project(project_id: str, project_update: ProjectCreate):
-    """Update a project - only owner can update"""
+async def update_project(project_id: str, updates: dict):
+    """
+    Update a project - only owner can update.
+    Requires 'owner_id' in updates for verification.
+    Only provided fields will be updated.
+    """
     try:
+        # Verify owner_id is provided for verification
+        if 'owner_id' not in updates:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="owner_id required for verification"
+            )
+        
         # Verify the project exists
         project_response = supabase.table("projects").select("*").eq("id", project_id).execute()
         
@@ -548,23 +704,19 @@ async def update_project(project_id: str, project_update: ProjectCreate):
         existing_project = project_response.data[0]
         
         # Verify ownership
-        if existing_project['owner_id'] != project_update.owner_id:
+        if existing_project['owner_id'] != updates['owner_id']:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the project owner can update this project"
             )
         
-        # Update the project
-        update_data = {
-            "title": project_update.title,
-            "description": project_update.description,
-            "tags": project_update.tags,
-            "duration": project_update.duration,
-            "availability_needed": project_update.availability_needed,
-            "project_image_url": project_update.project_image_url,
-            "updated_at": "NOW()"
-        }
+        # Remove owner_id from updates (we don't want to update it)
+        update_data = {k: v for k, v in updates.items() if k != 'owner_id'}
         
+        # Always update the timestamp
+        update_data['updated_at'] = 'NOW()'
+        
+        # Update the project with only the provided fields
         update_response = supabase.table("projects").update(update_data).eq("id", project_id).execute()
         
         if not update_response.data:
@@ -640,10 +792,60 @@ async def update_project_status(project_id: str, status_update: ProjectStatusUpd
         )
 
 
+# Delete a project
+@app.delete("/project/{project_id}")
+async def delete_project(project_id: str, delete_request: dict):
+    """Delete a project - only owner can delete"""
+    try:
+        # Verify owner_id is provided
+        if 'owner_id' not in delete_request:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="owner_id required for verification"
+            )
+        
+        # Verify the project exists
+        project_response = supabase.table("projects").select("*").eq("id", project_id).execute()
+        
+        if not project_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        
+        existing_project = project_response.data[0]
+        
+        # Verify ownership
+        if existing_project['owner_id'] != delete_request['owner_id']:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the project owner can delete this project"
+            )
+        
+        # Delete the project
+        delete_response = supabase.table("projects").delete().eq("id", project_id).execute()
+        
+        logger.info(f"Project {project_id} deleted successfully")
+        
+        return {
+            "success": True,
+            "message": "Project deleted successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting project: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting project: {str(e)}"
+        )
+
+
 # Get all projects (with optional filtering)
 @app.get("/projects")
 async def get_projects(project_status: Optional[str] = "open", limit: int = 50):
-    """Get all projects with optional status filter"""
+    """Get all projects with optional status filter and owner information"""
     logger.info(f"Fetching projects with status={project_status}, limit={limit}")
     try:
         query = supabase.table("projects").select("*")
@@ -652,12 +854,28 @@ async def get_projects(project_status: Optional[str] = "open", limit: int = 50):
             query = query.eq("status", project_status)
         
         response = query.limit(limit).execute()
+        projects = response.data or []
         
-        logger.info(f"Successfully fetched {len(response.data) if response.data else 0} projects")
+        # Enrich projects with owner information
+        enriched_projects = []
+        for project in projects:
+            try:
+                # Fetch owner profile
+                owner_response = supabase.table("profiles").select("first_name, last_name").eq("id", project['owner_id']).execute()
+                if owner_response.data and len(owner_response.data) > 0:
+                    owner = owner_response.data[0]
+                    project['owner_first_name'] = owner.get('first_name', '')
+                    project['owner_last_name'] = owner.get('last_name', '')
+                enriched_projects.append(project)
+            except Exception as e:
+                logger.warning(f"Error fetching owner for project {project.get('id')}: {str(e)}")
+                enriched_projects.append(project)
+        
+        logger.info(f"Successfully fetched {len(enriched_projects)} projects with owner info")
         
         return {
-            "projects": response.data or [],
-            "count": len(response.data) if response.data else 0
+            "projects": enriched_projects,
+            "count": len(enriched_projects)
         }
     
     except Exception as e:

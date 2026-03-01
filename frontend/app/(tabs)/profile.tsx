@@ -16,6 +16,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { getProjects } from '@/services/api';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function ProfileTabScreen() {
   const { user, signOut, checkProfileExists } = useAuth();
@@ -95,6 +96,20 @@ export default function ProfileTabScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {/* Brand Header */}
+      <View style={styles.brandHeader}>
+        <TouchableOpacity onPress={() => router.push('/(tabs)')}>
+          <Text style={styles.brandTitle}>Projects Matcher</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <IconSymbol size={24} name="chevron.left" color="#fff" />
+        </TouchableOpacity>
+      </View>
+
       {/* Header Card */}
       <View style={styles.headerCard}>
         <View style={styles.headerContent}>
@@ -142,7 +157,7 @@ export default function ProfileTabScreen() {
 
         <TouchableOpacity
           style={styles.editButton}
-          onPress={() => router.push('/profile')}
+          onPress={() => router.push('/profile-edit')}
         >
           <Text style={styles.editButtonText}>Edit Profile</Text>
         </TouchableOpacity>
@@ -189,21 +204,24 @@ export default function ProfileTabScreen() {
                   });
                 }}
               >
-                <View style={styles.projectCardContent}>
-                  <View style={styles.projectThumbnail}>
-                    {project.project_image_url ? (
-                      <Image
-                        source={{ uri: project.project_image_url }}
-                        style={styles.thumbnailImage}
-                      />
-                    ) : (
-                      <Text style={styles.thumbnailText}>📁</Text>
-                    )}
-                  </View>
-                  <View style={styles.projectInfo}>
-                    <Text style={styles.projectTitle}>{project.title}</Text>
-                    <Text style={styles.projectStatus}>{project.status || 'open'}</Text>
-                  </View>
+                {/* Project Image */}
+                <View style={styles.projectImageContainer}>
+                  {project.project_image_url ? (
+                    <Image
+                      source={{ uri: project.project_image_url }}
+                      style={styles.projectImage}
+                    />
+                  ) : (
+                    <View style={styles.projectImagePlaceholder}>
+                      <Text style={styles.projectImagePlaceholderText}>📁</Text>
+                    </View>
+                  )}
+                </View>
+                
+                {/* Project Info */}
+                <View style={styles.projectInfo}>
+                  <Text style={styles.projectTitle}>{project.title}</Text>
+                  <Text style={styles.projectStatus}>{project.status || 'open'}</Text>
                 </View>
               </TouchableOpacity>
             ))}
@@ -227,6 +245,32 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     paddingBottom: 40,
+  },
+  brandHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginBottom: 16,
+  },
+  brandTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#10B981',
+    letterSpacing: -1,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   loadingContainer: {
     flex: 1,
@@ -361,42 +405,40 @@ const styles = StyleSheet.create({
   },
   projectCard: {
     backgroundColor: '#f5f5f4',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 24,
+    overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#e7e5e4',
   },
-  projectCardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  projectThumbnail: {
-    width: 50,
-    height: 50,
-    borderRadius: 12,
+  projectImageContainer: {
+    width: '100%',
+    height: 180,
     backgroundColor: '#d1fae5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: '#10B981',
   },
-  thumbnailText: {
-    fontSize: 24,
-  },
-  thumbnailImage: {
+  projectImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 10,
+    resizeMode: 'cover',
+  },
+  projectImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#d1fae5',
+  },
+  projectImagePlaceholderText: {
+    fontSize: 72,
+    opacity: 0.5,
   },
   projectInfo: {
-    flex: 1,
+    padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   projectTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: '#1c1917',
     flex: 1,

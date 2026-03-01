@@ -17,6 +17,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { getProjects, getRecommendedProjects } from '@/services/api';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function ExploreScreen() {
   const router = useRouter();
@@ -87,6 +88,11 @@ export default function ExploreScreen() {
         }
       }
       
+      // Filter out user's own projects
+      if (userProfileId) {
+        projectData = projectData.filter(project => project.owner_id !== userProfileId);
+      }
+      
       setProjects(projectData);
       setFilteredProjects(projectData);
     } catch (error) {
@@ -112,6 +118,27 @@ export default function ExploreScreen() {
 
   return (
     <View style={styles.container}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />
+        }
+      >
+      {/* Brand Header */}
+      <View style={styles.brandHeader}>
+        <TouchableOpacity onPress={() => router.push('/(tabs)')}>
+          <Text style={styles.brandTitle}>Projects Matcher</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+        >
+          <IconSymbol size={24} name="chevron.left" color="#fff" />
+        </TouchableOpacity>
+      </View>
+
       {/* Search Bar */}
       <View style={styles.searchContainer}>
         <TextInput
@@ -148,13 +175,7 @@ export default function ExploreScreen() {
       )}
 
       {/* Results */}
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />
-        }
-      >
+      <View>
         <Text style={styles.resultsText}>
           {filteredProjects.length} {filteredProjects.length === 1 ? 'project' : 'projects'} found
         </Text>
@@ -177,19 +198,28 @@ export default function ExploreScreen() {
                   });
                 }}
               >
-                <View style={styles.projectCardContent}>
-                  <View style={styles.projectThumbnail}>
-                    {project.project_image_url ? (
-                      <Image
-                        source={{ uri: project.project_image_url }}
-                        style={styles.thumbnailImage}
-                      />
-                    ) : (
-                      <Text style={styles.thumbnailText}>📁</Text>
+                {/* Project Image */}
+                <View style={styles.projectImageContainer}>
+                  {project.project_image_url ? (
+                    <Image
+                      source={{ uri: project.project_image_url }}
+                      style={styles.projectImage}
+                    />
+                  ) : (
+                    <View style={styles.projectImagePlaceholder}>
+                      <Text style={styles.projectImagePlaceholderText}>📁</Text>
+                    </View>
+                  )}
+                </View>
+                
+                {/* Project Info */}
+                <View style={styles.projectInfo}>
+                    <Text style={styles.projectTitle} numberOfLines={2}>{project.title}</Text>
+                    {(project.owner_name || project.owner_first_name) && (
+                      <Text style={styles.projectOwner}>
+                        by {project.owner_name || `${project.owner_first_name} ${project.owner_last_name || ''}`.trim()}
+                      </Text>
                     )}
-                  </View>
-                  <View style={styles.projectInfo}>
-                    <Text style={styles.projectTitle}>{project.title}</Text>
                     {project.tags && project.tags.length > 0 && (
                       <View style={styles.tagContainer}>
                         {project.tags.slice(0, 3).map((tag: string, index: number) => (
@@ -200,7 +230,7 @@ export default function ExploreScreen() {
                       </View>
                     )}
                     {project.description && (
-                      <Text style={styles.projectDescription} numberOfLines={2}>
+                      <Text style={styles.projectDescription} numberOfLines={1}>
                         {project.description}
                       </Text>
                     )}
@@ -209,12 +239,12 @@ export default function ExploreScreen() {
                         {Math.round((project.similarity || 0) * 100)}% Match
                       </Text>
                     )}
-                  </View>
                 </View>
               </TouchableOpacity>
             ))}
           </View>
         )}
+      </View>
       </ScrollView>
     </View>
   );
@@ -231,8 +261,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#e6f7ed',
   },
+  brandHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginBottom: 8,
+  },
+  brandTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#10B981',
+    letterSpacing: -1,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
   searchContainer: {
-    padding: 20,
     paddingBottom: 10,
   },
   searchInput: {
@@ -251,7 +306,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    paddingTop: 10,
   },
   resultsText: {
     fontSize: 16,
@@ -271,72 +325,82 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   projectGrid: {
-    gap: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'space-between',
   },
   projectCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    borderRadius: 24,
-    padding: 16,
+    borderRadius: 20,
+    overflow: 'hidden',
     borderWidth: 2,
     borderColor: 'rgba(167, 243, 208, 0.5)',
+    width: '23.5%',
+    marginBottom: 8,
   },
-  projectCardContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  projectThumbnail: {
-    width: 60,
-    height: 60,
-    borderRadius: 16,
+  projectImageContainer: {
+    width: '100%',
+    height: 100,
     backgroundColor: '#d1fae5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: '#10B981',
   },
-  thumbnailText: {
-    fontSize: 28,
-  },
-  thumbnailImage: {
+  projectImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 14,
+    resizeMode: 'cover',
+  },
+  projectImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#d1fae5',
+  },
+  projectImagePlaceholderText: {
+    fontSize: 36,
+    opacity: 0.5,
   },
   projectInfo: {
-    flex: 1,
+    padding: 10,
   },
   projectTitle: {
-    fontSize: 20,
+    fontSize: 13,
     fontWeight: '700',
     color: '#1c1917',
-    marginBottom: 12,
-    letterSpacing: -0.5,
+    marginBottom: 3,
+    letterSpacing: -0.3,
+  },
+  projectOwner: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#78716c',
+    marginBottom: 6,
   },
   tagContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
+    gap: 4,
+    marginBottom: 6,
   },
   tag: {
     backgroundColor: '#d1fae5',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     borderWidth: 1,
     borderColor: 'rgba(16, 185, 129, 0.2)',
   },
   tagText: {
-    fontSize: 12,
+    fontSize: 9,
     fontWeight: '700',
     color: '#065f46',
   },
   projectDescription: {
-    fontSize: 16,
+    fontSize: 10,
     color: '#57534e',
-    lineHeight: 24,
+    lineHeight: 14,
     fontWeight: '500',
+    marginBottom: 4,
   },
   sortContainer: {
     flexDirection: 'row',
