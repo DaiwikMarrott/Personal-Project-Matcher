@@ -263,6 +263,16 @@ export async function getProject(projectId: string): Promise<ApiResponse<Project
   }
 }
 
+export async function getInterestCount(projectId: string): Promise<ApiResponse<{ interest_count: number }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/project/${projectId}/interest-count`);
+    if (!response.ok) return { data: { interest_count: 0 } };
+    return { data: await response.json() };
+  } catch {
+    return { data: { interest_count: 0 } };
+  }
+}
+
 /**
  * Get all projects with optional filters
  */
@@ -777,3 +787,22 @@ export async function sendChatMessage(
   }
 }
 
+export interface ProfileStats {
+  projects_created: number;
+  interactions_this_week: number;
+  approved_count: number;
+  denied_count: number;
+}
+
+export async function getProfileStats(profileId: string): Promise<ApiResponse<ProfileStats>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/profile/${profileId}/stats`);
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to get stats' };
+    }
+    return { data: await response.json() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}

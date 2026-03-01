@@ -20,7 +20,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAuth } from '@/contexts/AuthContext';
-import { updateProject, deleteProject, updateProjectStatus, uploadProjectImage, expressInterest } from '@/services/api';
+import { updateProject, deleteProject, updateProjectStatus, uploadProjectImage, expressInterest, getInterestCount } from '@/services/api';
 import * as ImagePicker from 'expo-image-picker';
 
 interface ProjectData {
@@ -55,6 +55,7 @@ export default function ProjectDetailScreen() {
   const [expressingInterest, setExpressingInterest] = useState(false);
   const [isDenied, setIsDenied] = useState(false);
   const [deletingProject, setDeletingProject] = useState(false);
+  const [interestCount, setInterestCount] = useState<number | null>(null);
 
   // Animation refs for Jekyll icon
   const talkingAnimation = useRef(new Animated.Value(0)).current;
@@ -135,6 +136,11 @@ export default function ProjectDetailScreen() {
         
         setProject(projectData);
         setEditedDescription(projectData.description || '');
+
+        // Fetch interest count in background
+        getInterestCount(projectData.id).then((res) => {
+          if (res.data) setInterestCount(res.data.interest_count);
+        });
         
         // Check if user owns this project
         if (user) {
@@ -554,6 +560,13 @@ export default function ProjectDetailScreen() {
             <View style={styles.matchBadge}>
               <Text style={styles.matchText}>
                 ✨ {Math.round(project.similarity_score * 100)}% Match
+              </Text>
+            </View>
+          )}
+          {interestCount !== null && interestCount > 0 && (
+            <View style={styles.interestCountBadge}>
+              <Text style={styles.interestCountText}>
+                👥 {interestCount} {interestCount === 1 ? 'person' : 'people'} interested
               </Text>
             </View>
           )}
@@ -1058,6 +1071,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#92400e',
+  },
+  interestCountBadge: {
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    marginTop: 6,
+  },
+  interestCountText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1d4ed8',
   },
   section: {
     marginBottom: 24,
