@@ -50,8 +50,13 @@ export default function ProjectDetailScreen() {
   const [newImageUri, setNewImageUri] = useState<string | null>(null);
   const [expressedInterest, setExpressedInterest] = useState(false);
   const [expressingInterest, setExpressingInterest] = useState(false);
+  const [isDenied, setIsDenied] = useState(false);
 
   useEffect(() => {
+    // Read denied status from navigation params
+    if (params.isDenied === '1') {
+      setIsDenied(true);
+    }
     loadProjectData();
   }, []);
 
@@ -637,6 +642,11 @@ export default function ProjectDetailScreen() {
               <Text style={styles.deleteButtonText}>🗑️ Delete Project</Text>
             </TouchableOpacity>
           </View>
+        ) : isDenied ? (
+          <View style={styles.deniedBanner}>
+            <Text style={styles.deniedBannerText}>❌ Your request to join this project was not accepted.</Text>
+            <Text style={styles.deniedBannerSub}>The project owner can reverse this decision at any time.</Text>
+          </View>
         ) : (
           <TouchableOpacity 
             style={[styles.actionButton, (expressedInterest || expressingInterest) && styles.buttonDisabled]} 
@@ -1087,5 +1097,26 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: -0.5,
+  },
+  deniedBanner: {
+    backgroundColor: '#fee2e2',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 20,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fca5a5',
+    gap: 4,
+  },
+  deniedBannerText: {
+    color: '#ef4444',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  deniedBannerSub: {
+    color: '#b91c1c',
+    fontSize: 12,
+    textAlign: 'center',
   },
 });

@@ -17,7 +17,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
-import { getProjects, getRecommendedProjects } from '@/services/api';
+import { getProjects, getRecommendedProjects, getDeniedProjectIds } from '@/services/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function ExploreScreen() {
@@ -30,6 +30,7 @@ export default function ExploreScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [sortByMatch, setSortByMatch] = useState(false);
   const [userProfileId, setUserProfileId] = useState<string | null>(null);
+  const [deniedProjectIds, setDeniedProjectIds] = useState<string[]>([]);
 
   useEffect(() => {
     getUserProfile();
@@ -57,6 +58,10 @@ export default function ExploreScreen() {
         const { exists, profile } = await checkProfileExists(user.id);
         if (exists && profile) {
           setUserProfileId(profile.id);
+          const deniedResult = await getDeniedProjectIds(profile.id);
+          if (deniedResult.data) {
+            setDeniedProjectIds(deniedResult.data.denied_project_ids);
+          }
         }
       } catch (error) {
         console.error('Error getting profile:', error);
@@ -191,7 +196,7 @@ export default function ExploreScreen() {
                 onPress={() => {
                   router.push({
                     pathname: '/project-detail',
-                    params: { projectData: JSON.stringify(project) },
+                    params: { projectData: JSON.stringify(project), isDenied: deniedProjectIds.includes(project.id) ? '1' : '0' },
                   });
                 }}
               >
@@ -211,6 +216,11 @@ export default function ExploreScreen() {
                 
                 {/* Project Info */}
                 <View style={styles.projectInfo}>
+                    {deniedProjectIds.includes(project.id) && (
+                      <View style={styles.deniedBadge}>
+                        <Text style={styles.deniedBadgeText}>❌ Request Denied</Text>
+                      </View>
+                    )}
                     <Text style={styles.projectTitle} numberOfLines={2}>{project.title}</Text>
                     {(project.owner_name || project.owner_first_name) && (
                       <Text style={styles.projectOwner}>
@@ -404,5 +414,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#10B981',
+  },
+  deniedBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#fee2e2',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 4,
+  },
+  deniedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#ef4444',
   },
 });

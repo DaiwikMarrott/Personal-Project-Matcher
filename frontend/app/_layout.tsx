@@ -25,6 +25,8 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="create-profile" />
           <Stack.Screen name="notifications" options={{ headerShown: false, title: 'Notifications' }} />
+          <Stack.Screen name="request-review" options={{ headerShown: false, title: 'Request Review' }} />
+          <Stack.Screen name="chat" options={{ headerShown: false, title: 'Chat' }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
         <StatusBar style="auto" />
