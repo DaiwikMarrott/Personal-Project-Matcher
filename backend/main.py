@@ -13,7 +13,7 @@ import google.generativeai as genai
 import base64
 import mimetypes
 
-from ai_service import generate_project_roadmap, generate_embedding, generate_profile_summary, generate_project_summary
+from ai_service import generate_project_roadmap, generate_embedding, generate_profile_summary, generate_project_summary, generate_hyde_verdict
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -649,6 +649,47 @@ async def get_profile(profile_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching profile: {str(e)}"
+        )
+
+
+# Generate Mr. Hyde's verdict on a profile
+@app.post("/profile/{profile_id}/hyde-verdict")
+async def get_hyde_verdict(profile_id: str):
+    """
+    Generate Mr. Hyde's voice verdict on a profile.
+    Returns a script and audio (base64 MP3) with Hyde's feedback.
+    """
+    try:
+        # Fetch the profile
+        response = supabase.table("profiles").select("*").eq("id", profile_id).execute()
+        
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Profile not found"
+            )
+        
+        profile_data = response.data[0]
+        
+        # Generate Hyde verdict
+        verdict = await generate_hyde_verdict(profile_data)
+        
+        return {
+            "success": True,
+            "script": verdict["script"],
+            "audio_base64": verdict["audio_base64"],
+            "audio_format": verdict["audio_format"],
+            "is_roast": verdict["is_roast"],
+            "error": verdict.get("error")
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating Hyde verdict: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating Hyde verdict: {str(e)}"
         )
 
 
