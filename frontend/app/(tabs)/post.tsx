@@ -1,9 +1,10 @@
-import { StyleSheet, ScrollView, View, TouchableOpacity, TextInput, ActivityIndicator, Platform, KeyboardAvoidingView } from 'react-native';
+import { StyleSheet, ScrollView, View, TouchableOpacity, TextInput, ActivityIndicator, Platform, KeyboardAvoidingView, Image, Alert } from 'react-native';
 import { useState } from 'react';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
 
 // Use hardcoded URL for web, env variable for native
@@ -24,6 +25,9 @@ export default function PostProjectScreen() {
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
   const [duration, setDuration] = useState('');
+  const [availability, setAvailability] = useState('');
+  const [projectImage, setProjectImage] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -57,6 +61,30 @@ export default function PostProjectScreen() {
     return true;
   };
 
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        const imageUri = asset.base64 
+          ? `data:image/jpeg;base64,${asset.base64}`
+          : asset.uri;
+        setProjectImage(imageUri);
+        setImageFile(asset);
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+
   const handleSubmit = async () => {
     if (!user) {
       setError('You must be logged in to post a project');
@@ -82,6 +110,8 @@ export default function PostProjectScreen() {
         description: description.trim(),
         tags: tagsArray,
         duration: duration.trim() || null,
+        availability_needed: availability.trim() || null,
+        project_image_url: projectImage || null,
       };
 
       console.log('Submitting project:', projectData);
@@ -107,6 +137,9 @@ export default function PostProjectScreen() {
       setDescription('');
       setTags('');
       setDuration('');
+      setAvailability('');
+      setProjectImage(null);
+      setImageFile(null);
 
       // Show success message for 3 seconds to allow AI processing, then navigate to explore
       setTimeout(() => {
@@ -127,6 +160,9 @@ export default function PostProjectScreen() {
     setDescription('');
     setTags('');
     setDuration('');
+    setAvailability('');
+    setProjectImage(null);
+    setImageFile(null);
     setError('');
   };
 
@@ -290,6 +326,56 @@ Looking for: Frontend developer (React Native), Backend developer (Python/FastAP
                 onChangeText={setDuration}
                 maxLength={50}
               />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <ThemedText style={styles.label}>
+                Availability Needed (Optional)
+              </ThemedText>
+              <ThemedText style={styles.helper}>
+                When do you need team members to be available?
+              </ThemedText>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., 10 hours/week, Weekends, Flexible"
+                placeholderTextColor="#999"
+                value={availability}
+                onChangeText={setAvailability}
+                maxLength={100}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <ThemedText style={styles.label}>
+                Project Image (Optional)
+              </ThemedText>
+              <ThemedText style={styles.helper}>
+                Upload a schematic, diagram, or mockup for your project
+              </ThemedText>
+              
+              {projectImage ? (
+                <View style={styles.imageContainer}>
+                  <Image 
+                    source={{ uri: projectImage }} 
+                    style={styles.projectImage}
+                    resizeMode="cover"
+                  />
+                  <TouchableOpacity 
+                    style={styles.changeImageButton}
+                    onPress={pickImage}
+                  >
+                    <ThemedText style={styles.changeImageText}>Change Image</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity 
+                  style={styles.uploadButton}
+                  onPress={pickImage}
+                >
+                  <ThemedText style={styles.uploadEmoji}>📷</ThemedText>
+                  <ThemedText style={styles.uploadText}>Tap to Upload Image</ThemedText>
+                </TouchableOpacity>
+              )}
             </View>
 
             <View style={styles.buttonRow}>
@@ -484,6 +570,47 @@ const styles = StyleSheet.create({
     minHeight: 200,
     paddingTop: 14,
     textAlignVertical: 'top',
+  },
+  imageContainer: {
+    marginTop: 12,
+  },
+  projectImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  changeImageButton: {
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.border.medium,
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+  },
+  changeImageText: {
+    color: Colors.text.secondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  uploadButton: {
+    backgroundColor: Colors.surface,
+    borderWidth: 2,
+    borderColor: Colors.border.light,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    padding: 40,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  uploadEmoji: {
+    fontSize: 48,
+    marginBottom: 8,
+  },
+  uploadText: {
+    fontSize: 16,
+    color: Colors.text.secondary,
+    fontWeight: '500',
   },
   buttonRow: {
     flexDirection: 'row',

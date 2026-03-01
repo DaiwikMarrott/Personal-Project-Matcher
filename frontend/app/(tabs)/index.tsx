@@ -269,7 +269,7 @@ export default function HomeScreen() {
                 <TouchableOpacity 
                   key={project.id}
                   style={styles.projectCard}
-                  onPress={() => router.push('/explore')}
+                  onPress={() => router.push(`/project/${project.id}`)}
                 >
                   <View style={styles.projectHeader}>
                     <ThemedText style={styles.projectTitle} numberOfLines={1}>
@@ -324,7 +324,7 @@ export default function HomeScreen() {
                 <TouchableOpacity 
                   key={project.id}
                   style={[styles.projectCard, styles.closedProjectCard]}
-                  onPress={() => router.push('/explore')}
+                  onPress={() => router.push(`/project/${project.id}`)}
                 >
                   <View style={styles.projectHeader}>
                     <ThemedText style={styles.projectTitle} numberOfLines={1}>

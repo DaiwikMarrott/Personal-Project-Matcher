@@ -95,6 +95,8 @@ class ProjectCreate(BaseModel):
     description: str
     tags: Optional[List[str]] = []
     duration: Optional[str] = None
+    availability_needed: Optional[str] = None
+    project_image_url: Optional[str] = None
 
 
 class ProjectResponse(BaseModel):
@@ -102,10 +104,12 @@ class ProjectResponse(BaseModel):
     owner_id: str
     title: str
     description: str
-    tags: Optional[List[str]]
-    duration: Optional[str]
-    roadmap: Optional[Dict[str, Any]]
-    status: str
+    tags: Optional[List[str]] = None
+    duration: Optional[str] = None
+    availability_needed: Optional[str] = None
+    project_image_url: Optional[str] = None
+    roadmap: Optional[Dict[str, Any]] = None
+    status: Optional[str] = 'open'
 
 
 class MatchRequest(BaseModel):
@@ -443,6 +447,61 @@ async def get_project(project_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching project: {str(e)}"
+        )
+
+
+# Update a project
+@app.put("/project/{project_id}", response_model=ProjectResponse)
+async def update_project(project_id: str, project_update: ProjectCreate):
+    """Update a project - only owner can update"""
+    try:
+        # Verify the project exists
+        project_response = supabase.table("projects").select("*").eq("id", project_id).execute()
+        
+        if not project_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        
+        existing_project = project_response.data[0]
+        
+        # Verify ownership
+        if existing_project['owner_id'] != project_update.owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the project owner can update this project"
+            )
+        
+        # Update the project
+        update_data = {
+            "title": project_update.title,
+            "description": project_update.description,
+            "tags": project_update.tags,
+            "duration": project_update.duration,
+            "availability_needed": project_update.availability_needed,
+            "project_image_url": project_update.project_image_url,
+            "updated_at": "NOW()"
+        }
+        
+        update_response = supabase.table("projects").update(update_data).eq("id", project_id).execute()
+        
+        if not update_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update project"
+            )
+        
+        logger.info(f"Project {project_id} updated successfully")
+        return update_response.data[0]
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating project: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating project: {str(e)}"
         )
 
 

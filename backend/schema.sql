@@ -29,6 +29,8 @@ CREATE TABLE projects (
     description TEXT NOT NULL,
     tags TEXT[],
     duration VARCHAR(100), -- Expected project duration (e.g., "2 weeks", "3 months")
+    availability_needed VARCHAR(200), -- When team members are needed (e.g., "10 hours/week", "Weekends")
+    project_image_url TEXT, -- URL to project schematic/image
     roadmap JSONB DEFAULT '{}', -- AI-generated technical roadmap
     project_embedding VECTOR(768), -- 768-dimensional embedding for semantic matching
     status VARCHAR(50) DEFAULT 'open' CHECK (status IN ('open', 'in-progress', 'completed', 'closed')),
