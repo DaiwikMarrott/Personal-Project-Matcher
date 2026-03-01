@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   Linking,
   Image,
+  Platform,
+  Alert,
 } from 'react-native';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,12 +20,23 @@ import { useRouter } from 'expo-router';
 import { getProjects } from '@/services/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
+const API_URL = Platform.OS === 'web' 
+  ? 'http://localhost:8000' 
+  : Platform.OS === 'android' 
+    ? 'http://10.0.2.2:8000' 
+    : 'http://localhost:8000';
+
 export default function ProfileTabScreen() {
   const { user, signOut, checkProfileExists } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<any>(null);
   const [userProjects, setUserProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Hyde verdict state
+  const [hydeLoading, setHydeLoading] = useState(false);
+  const [hydeScript, setHydeScript] = useState('');
+  const [showHydeScript, setShowHydeScript] = useState(false);
 
   useEffect(() => {
     loadProfileData();
@@ -56,6 +69,106 @@ export default function ProfileTabScreen() {
       console.error('Error loading profile:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const hearMrHyde = async () => {
+    if (!profile?.id) {
+      Alert.alert('Error', 'Profile not loaded');
+      return;
+    }
+
+    try {
+      setHydeLoading(true);
+      setShowHydeScript(false);
+      
+      console.log('Fetching Hyde verdict for profile:', profile.id);
+      const response = await fetch(`${API_URL}/profile/${profile.id}/hyde-verdict`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error:', errorText);
+        throw new Error('Failed to get Hyde verdict');
+      }
+
+      const data = await response.json();
+      console.log('Hyde verdict received:', {
+        hasScript: !!data.script,
+        hasAudio: !!data.audio_base64,
+        audioLength: data.audio_base64?.length,
+        isRoast: data.is_roast
+      });
+      
+      if (data.script) {
+        setHydeScript(data.script);
+        setShowHydeScript(true);
+      }
+
+      // Play audio if available
+      if (data.audio_base64 && Platform.OS === 'web') {
+        try {
+          console.log('Creating audio element...');
+          console.log('Audio base64 length:', data.audio_base64.length);
+          
+          // Create audio blob for better compatibility
+          const binaryString = atob(data.audio_base64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: 'audio/mpeg' });
+          const audioUrl = URL.createObjectURL(blob);
+          
+          console.log('Created blob URL:', audioUrl);
+          
+          const audio = new Audio(audioUrl);
+          audio.volume = 1.0;
+          
+          audio.onloadeddata = () => {
+            console.log('Audio loaded, duration:', audio.duration);
+          };
+          
+          audio.onerror = (e) => {
+            console.error('Audio error:', audio.error);
+            Alert.alert('Audio Error', `Failed to load audio: ${audio.error?.message || 'Unknown'}`);
+          };
+          
+          audio.onended = () => {
+            console.log('Audio finished');
+            URL.revokeObjectURL(audioUrl);
+          };
+          
+          const playPromise = audio.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => console.log('Audio playing'))
+              .catch(err => {
+                console.error('Play error:', err);
+                if (err.name === 'NotAllowedError') {
+                  Alert.alert('Audio Blocked', 'Browser blocked audio. Please allow audio playback.');
+                } else {
+                  Alert.alert('Audio Error', `Could not play: ${err.message}`);
+                }
+              });
+          }
+        } catch (err: any) {
+          console.error('Audio exception:', err);
+          Alert.alert('Audio Error', err.message);
+        }
+      } else if (data.audio_base64) {
+        console.log('Mobile - showing alert');
+        Alert.alert('Mr. Hyde Says', data.script);
+      } else {
+        console.log('No audio data');
+        Alert.alert('Mr. Hyde Says', data.script);
+      }
+    } catch (error: any) {
+      console.error('Error:', error);
+      Alert.alert('Error', 'Failed to get Mr. Hyde\'s verdict. Please try again.');
+    } finally {
+      setHydeLoading(false);
     }
   };
 
@@ -158,6 +271,19 @@ export default function ProfileTabScreen() {
           </View>
         )}
 
+        {/* Mr. Hyde Button */}
+        <TouchableOpacity
+          style={styles.hydeButton}
+          onPress={hearMrHyde}
+          disabled={hydeLoading}
+        >
+          {hydeLoading ? (
+            <Text style={styles.hydeButtonText}>...</Text>
+          ) : (
+            <Text style={styles.hydeButtonText}>🔊 HEAR MR. HYDE</Text>
+          )}
+        </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.editButton}
           onPress={() => router.push('/profile-edit')}
@@ -165,6 +291,14 @@ export default function ProfileTabScreen() {
           <Text style={styles.editButtonText}>Edit Profile</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Hyde Script Display */}
+      {showHydeScript && hydeScript && (
+        <View style={styles.hydeScriptContainer}>
+          <Text style={styles.hydeScriptTitle}>🗣️ Mr. Hyde's Verdict</Text>
+          <Text style={styles.hydeScriptText}>{hydeScript}</Text>
+        </View>
+      )}
 
       {/* Skills Section */}
       {profile.skills && profile.skills.length > 0 && (
@@ -354,6 +488,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#065f46',
+  },
+  hydeButton: {
+    backgroundColor: '#FF69B4',
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  hydeButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.5,
+  },
+  hydeScriptContainer: {
+    backgroundColor: '#FFF0F8',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#FF69B4',
+    shadowColor: '#FF69B4',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  hydeScriptTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FF1493',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  hydeScriptText: {
+    fontSize: 15,
+    color: '#1c1917',
+    fontWeight: '500',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    lineHeight: 22,
   },
   editButton: {
     backgroundColor: '#f5f5f4',
