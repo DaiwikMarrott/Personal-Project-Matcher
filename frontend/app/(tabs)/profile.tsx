@@ -43,9 +43,28 @@ export default function ProfileTabScreen() {
   const audioRef = useRef<any>(null);
   const talkingAnimation = useRef(new Animated.Value(0)).current;
   const rotationAnimation = useRef(new Animated.Value(0)).current;
+  const typingIntervalRef = useRef<any>(null);
 
   useEffect(() => {
     loadProfileData();
+    
+    // Cleanup function
+    return () => {
+      // Stop and cleanup audio if it exists
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current = null;
+      }
+      // Clear typing interval if it exists
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
+      }
+      // Stop animations
+      talkingAnimation.stopAnimation();
+      rotationAnimation.stopAnimation();
+    };
   }, [user]);
 
   const loadProfileData = async () => {
@@ -86,16 +105,22 @@ export default function ProfileTabScreen() {
     setDisplayedText('');
     let currentIndex = 0;
     
+    // Clear previous interval if exists
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+    }
+    
     const interval = setInterval(() => {
       if (currentIndex < words.length) {
         setDisplayedText(prev => prev + (prev ? ' ' : '') + words[currentIndex]);
         currentIndex++;
       } else {
         clearInterval(interval);
+        typingIntervalRef.current = null;
       }
     }, msPerWord);
     
-    return interval;
+    typingIntervalRef.current = interval;
   };
 
   const startTalkingAnimation = () => {
@@ -152,107 +177,181 @@ export default function ProfileTabScreen() {
       return;
     }
 
+    // Cleanup previous audio and animations
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      audioRef.current = null;
+    }
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+    stopTalkingAnimation();
+
+    let data: any = null;
     try {
       setHydeLoading(true);
       setShowHydeScript(false);
       setDisplayedText('');
       
-      console.log('Fetching Hyde verdict for profile:', profile.id);
+      console.log('=== HYDE VERDICT START ===');
+      console.log('Profile ID:', profile.id);
+      console.log('API URL:', `${API_URL}/profile/${profile.id}/hyde-verdict`);
+      
       const response = await fetch(`${API_URL}/profile/${profile.id}/hyde-verdict`, {
         method: 'POST',
       });
 
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Server error:', errorText);
-        throw new Error('Failed to get Hyde verdict');
+        console.error('Server error response:', errorText);
+        throw new Error(`Server returned ${response.status}: ${errorText}`);
       }
 
-      const data = await response.json();
-      console.log('Hyde verdict received:', {
-        hasScript: !!data.script,
-        hasAudio: !!data.audio_base64,
-        audioLength: data.audio_base64?.length,
-        isRoast: data.is_roast
-      });
+      data = await response.json();
+      console.log('=== HYDE VERDICT DATA RECEIVED ===');
+      console.log('Full data:', data);
+      console.log('Script:', data.script);
+      console.log('Has audio_base64:', !!data.audio_base64);
+      console.log('Audio length:', data.audio_base64?.length);
+      console.log('Is roast:', data.is_roast);
+      console.log('Error field:', data.error);
       
       if (data.script) {
         setHydeScript(data.script);
         setShowHydeScript(true);
-        setHydeLoading(false);
+      } else {
+        console.warn('No script in response!');
       }
 
       // Play audio if available
       if (data.audio_base64 && Platform.OS === 'web') {
+        console.log('=== AUDIO PLAYBACK START ===');
+        console.log('Audio base64 length:', data.audio_base64.length);
+        console.log('First 50 chars:', data.audio_base64.substring(0, 50));
+        
         try {
-          console.log('Creating audio element...');
+          console.log('Creating audio blob...');
           
           // Create audio blob for better compatibility
           const binaryString = atob(data.audio_base64);
+          console.log('Binary string length:', binaryString.length);
+          
           const bytes = new Uint8Array(binaryString.length);
           for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
           }
+          console.log('Byte array created, length:', bytes.length);
+          
           const blob = new Blob([bytes], { type: 'audio/mpeg' });
+          console.log('Blob created, size:', blob.size, 'type:', blob.type);
+          
           const audioUrl = URL.createObjectURL(blob);
+          console.log('Blob URL created:', audioUrl);
           
           const audio = new Audio(audioUrl);
           audioRef.current = audio;
+          console.log('Audio element created');
+          
+          // Add event listeners for animations
+          audio.addEventListener('loadeddata', () => {
+            console.log('✅ Audio loaded successfully, duration:', audio.duration);
+            // Start typing animation based on audio duration
+            if (data.script && audio.duration > 0) {
+              console.log('Starting typing animation...');
+              animateTyping(data.script, audio.duration);
+            } else {
+              console.warn('Cannot start typing - no script or invalid duration');
+            }
+          });
+          
+          audio.addEventListener('canplay', () => {
+            console.log('Audio can play');
+          });
+          
+          audio.addEventListener('play', () => {
+            console.log('Audio is playing');
+            startTalkingAnimation();
+          });
+          
+          audio.addEventListener('pause', () => {
+            console.log('Audio paused');
+            stopTalkingAnimation();
+          });
+          
+          audio.addEventListener('error', (e) => {
+            console.error('Audio error event:', e);
+            console.error('Audio error details:', audio.error);
+            Alert.alert('Audio Error', `Failed to load audio: ${audio.error?.message || 'Unknown error'}`);
+            stopTalkingAnimation();
+            setHydeLoading(false);
+          });
+          
+          audio.addEventListener('ended', () => {
+            console.log('Audio playback finished');
+            stopTalkingAnimation();
+            setHydeLoading(false);
+            URL.revokeObjectURL(audioUrl); // Clean up
+          });
+          
+          // Set volume
           audio.volume = 1.0;
           
-          audio.onloadeddata = () => {
-            console.log('Audio loaded, duration:', audio.duration);
-            // Start typing animation based on audio duration
-            animateTyping(data.script, audio.duration);
-          };
-          
-          audio.onplay = () => {
-            startTalkingAnimation();
-          };
-          
-          audio.onpause = () => {
-            stopTalkingAnimation();
-          };
-          
-          audio.onended = () => {
-            console.log('Audio finished');
-            stopTalkingAnimation();
-            URL.revokeObjectURL(audioUrl);
-          };
-          
-          audio.onerror = (e) => {
-            console.error('Audio error:', audio.error);
-            stopTalkingAnimation();
-            Alert.alert('Audio Error', `Failed to load audio: ${audio.error?.message || 'Unknown'}`);
-          };
-          
+          console.log('Attempting to play audio...');
           const playPromise = audio.play();
+          
           if (playPromise !== undefined) {
             playPromise
-              .then(() => console.log('Audio playing'))
+              .then(() => {
+                console.log('Audio playing successfully');
+              })
               .catch(err => {
-                console.error('Play error:', err);
+                console.error('Error playing audio:', err);
+                console.error('Error name:', err.name);
+                console.error('Error message:', err.message);
                 stopTalkingAnimation();
+                setHydeLoading(false);
                 if (err.name === 'NotAllowedError') {
-                  Alert.alert('Audio Blocked', 'Browser blocked audio. Please allow audio playback.');
+                  Alert.alert('Audio Blocked', 'Browser blocked audio playback. Please check your browser settings and allow audio.');
+                } else if (err.name === 'NotSupportedError') {
+                  Alert.alert('Audio Error', 'Your browser does not support this audio format.');
                 } else {
-                  Alert.alert('Audio Error', `Could not play: ${err.message}`);
+                  Alert.alert('Audio Error', `Could not play audio: ${err.message}`);
                 }
               });
           }
         } catch (err: any) {
-          console.error('Audio exception:', err);
-          Alert.alert('Audio Error', err.message);
+          console.error('Exception creating/playing audio:', err);
+          Alert.alert('Audio Error', 'Failed to create audio player: ' + err.message);
+          stopTalkingAnimation();
+          setHydeLoading(false);
         }
       } else if (data.audio_base64) {
-        console.log('Mobile - showing alert');
+        console.log('=== MOBILE PLATFORM ===');
+        console.log('Platform:', Platform.OS);
+        console.log('Showing alert instead of playing audio');
+        setHydeLoading(false);
         Alert.alert('Mr. Hyde Says', data.script);
       } else {
-        console.log('No audio data');
+        console.log('=== NO AUDIO DATA ===');
+        console.log('audio_base64 is empty or missing');
+        console.log('Data error field:', data.error);
+        setHydeLoading(false);
         setDisplayedText(data.script);
+        if (data.error) {
+          Alert.alert('Audio Generation Failed', `Mr. Hyde says: "${data.script}"\n\nError: ${data.error}`);
+        }
       }
     } catch (error: any) {
-      console.error('Error:', error);
+      console.error('=== HYDE VERDICT ERROR ===');
+      console.error('Error type:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Full error:', error);
+      setHydeLoading(false);
       Alert.alert('Error', 'Failed to get Mr. Hyde\'s verdict. Please try again.');
     } finally {
       if (!data?.audio_base64) {
@@ -369,7 +468,7 @@ export default function ProfileTabScreen() {
           {hydeLoading ? (
             <Text style={styles.hydeButtonText}>...</Text>
           ) : (
-            <Text style={styles.hydeButtonText}>🔊 HEAR MR. HYDE</Text>
+            <Text style={styles.hydeButtonText}>⚡ HEAR MR. HYDE</Text>
           )}
         </TouchableOpacity>
 
@@ -623,7 +722,7 @@ const styles = StyleSheet.create({
     color: '#065f46',
   },
   hydeButton: {
-    backgroundColor: '#FF69B4',
+    backgroundColor: '#E31C45',
     paddingVertical: 14,
     borderRadius: 16,
     alignItems: 'center',
@@ -649,8 +748,8 @@ const styles = StyleSheet.create({
     padding: 24,
     marginBottom: 20,
     borderWidth: 3,
-    borderColor: '#FF69B4',
-    shadowColor: '#FF69B4',
+    borderColor: '#E31C45',
+    shadowColor: '#E31C45',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
@@ -667,17 +766,20 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#FFE4F0',
+    backgroundColor: '#FFD6E0',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 4,
-    borderColor: '#FF69B4',
-    shadowColor: '#FF1493',
+    borderColor: '#E31C45',
+    shadowColor: '#DC143C',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
     overflow: 'hidden',
+  },
+  hydeAvatarEmoji: {
+    fontSize: 56,
   },
   hydeChickenImage: {
     width: '100%',
@@ -691,7 +793,7 @@ const styles = StyleSheet.create({
   },
   soundWave: {
     width: 4,
-    backgroundColor: '#FF69B4',
+    backgroundColor: '#E31C45',
     borderRadius: 2,
   },
   wave1: {
@@ -710,7 +812,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingHorizontal: 12,
     paddingVertical: 4,
-    backgroundColor: '#FF69B4',
+    backgroundColor: '#E31C45',
     borderRadius: 12,
   },
   hydeNameText: {
@@ -725,7 +827,7 @@ const styles = StyleSheet.create({
     padding: 20,
     position: 'relative',
     borderWidth: 2,
-    borderColor: '#FF69B4',
+    borderColor: '#E31C45',
     flex: 1,
   },
   speechBubbleTriangle: {
@@ -739,9 +841,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 10,
     borderTopColor: 'transparent',
     borderBottomColor: 'transparent',
-    borderRightColor: '#FF69B4',
-    borderRightColor: 'transparent',
-    borderBottomColor: '#FF69B4',
+    borderRightColor: '#E31C45',
   },
   hydeScriptText: {
     fontSize: 16,
