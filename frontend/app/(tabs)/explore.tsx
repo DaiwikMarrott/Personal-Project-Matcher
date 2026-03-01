@@ -1,8 +1,9 @@
 import { StyleSheet, ScrollView, View, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
+import { useFocusEffect } from 'expo-router';
 import Colors from '@/constants/colors';
 
 // Use hardcoded URL for web, env variable for native
@@ -34,6 +35,16 @@ export default function ExploreScreen() {
   useEffect(() => {
     checkBackendHealth();
   }, []);
+
+  // Refresh projects when screen comes into focus (e.g., after creating a project)
+  useFocusEffect(
+    useCallback(() => {
+      if (user && backendOnline) {
+        console.log('Explore screen focused - refreshing projects');
+        fetchProjects();
+      }
+    }, [user, backendOnline])
+  );
 
   const checkBackendHealth = async () => {
     try {

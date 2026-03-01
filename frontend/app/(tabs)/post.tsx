@@ -108,11 +108,11 @@ export default function PostProjectScreen() {
       setTags('');
       setDuration('');
 
-      // Show success message for 2 seconds, then navigate to explore
+      // Show success message for 3 seconds to allow AI processing, then navigate to explore
       setTimeout(() => {
         setSuccess(false);
         router.push('/explore');
-      }, 2000);
+      }, 3000);
 
     } catch (err: any) {
       console.error('Error creating project:', err);
@@ -152,15 +152,19 @@ export default function PostProjectScreen() {
       <ThemedView style={styles.container}>
         <View style={styles.content}>
           <View style={styles.successCard}>
+            <ActivityIndicator size="large" color="#4CAF50" style={styles.successSpinner} />
             <ThemedText style={styles.successEmoji}>🎉</ThemedText>
             <ThemedText type="subtitle" style={styles.successTitle}>
               Project Created Successfully!
             </ThemedText>
             <ThemedText style={styles.successText}>
-              Dr. Jekyll is generating your AI-powered roadmap...
+              ✨ Dr. Jekyll is generating your AI-powered roadmap...
+            </ThemedText>
+            <ThemedText style={styles.successText}>
+              🔄 Loading your project into the explore page...
             </ThemedText>
             <ThemedText style={styles.successSubtext}>
-              Redirecting to explore...
+              Please wait...
             </ThemedText>
           </View>
         </View>
@@ -411,6 +415,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 16,
     elevation: 4,
+  },
+  successSpinner: {
+    marginBottom: 20,
   },
   successEmoji: {
     fontSize: 72,
