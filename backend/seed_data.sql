@@ -8,8 +8,9 @@
 -- Replace these with your actual user UUIDs from Supabase Auth after signing up
 
 -- Sample profile 1: Computer Science Student
-INSERT INTO profiles (first_name, last_name, email, language, major, interests, skills, experience_level, availability, urls, bio_embedding)
+INSERT INTO profiles (auth_user_id, first_name, last_name, email, language, major, interests, skills, experience_level, availability, urls, bio_embedding)
 VALUES (
+    gen_random_uuid(), -- This should be replaced with actual auth.users.id in production
     'Alice',
     'Johnson',
     'alice@example.com',
@@ -25,8 +26,9 @@ VALUES (
 );
 
 -- Sample profile 2: Biology Major
-INSERT INTO profiles (first_name, last_name, email, language, major, interests, skills, experience_level, availability, urls, bio_embedding)
+INSERT INTO profiles (auth_user_id, first_name, last_name, email, language, major, interests, skills, experience_level, availability, urls, bio_embedding)
 VALUES (
+    gen_random_uuid(),
     'Bob',
     'Chen',
     'bob@example.com',
@@ -41,8 +43,9 @@ VALUES (
 );
 
 -- Sample profile 3: Design Student
-INSERT INTO profiles (first_name, last_name, email, language, major, interests, skills, experience_level, availability, urls, bio_embedding)
+INSERT INTO profiles (auth_user_id, first_name, last_name, email, language, major, interests, skills, experience_level, availability, urls, bio_embedding)
 VALUES (
+    gen_random_uuid(),
     'Carol',
     'Davis',
     'carol@example.com',
@@ -57,8 +60,9 @@ VALUES (
 );
 
 -- Sample profile 4: Backend Developer
-INSERT INTO profiles (first_name, last_name, email, language, major, interests, skills, experience_level, availability, urls, bio_embedding)
+INSERT INTO profiles (auth_user_id, first_name, last_name, email, language, major, interests, skills, experience_level, availability, urls, bio_embedding)
 VALUES (
+    gen_random_uuid(),
     'David',
     'Williams',
     'david@example.com',

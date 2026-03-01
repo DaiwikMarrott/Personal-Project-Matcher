@@ -63,7 +63,8 @@ Return ONLY valid JSON, no markdown formatting or explanations.
 """
         
         # Use Gemini to generate the roadmap
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Using gemini-1.5-pro - reliable production model
+        model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(prompt)
         
         # Parse the response
@@ -129,10 +130,10 @@ async def generate_embedding(text: str) -> List[float]:
             return [0.0] * 768
         
         # Use Gemini's embedding model
+        # embedding-001 (768 dimensions) - supports retrieval_document task type
         result = genai.embed_content(
             model="models/text-embedding-004",
-            content=text,
-            task_type="semantic_similarity"
+            content=text
         )
         
         embedding = result['embedding']
@@ -191,7 +192,7 @@ Generate a short, energetic hype script (2-3 sentences max) that:
 Use high-energy language. Be enthusiastic but authentic.
 """
         
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
         response = model.generate_content(prompt)
         
         return response.text.strip()
