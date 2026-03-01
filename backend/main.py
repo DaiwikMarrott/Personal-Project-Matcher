@@ -8,9 +8,14 @@ from typing import List, Optional, Dict, Any
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import os
+import logging
 import google.generativeai as genai
 
 from ai_service import generate_project_roadmap, generate_embedding
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -26,6 +31,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info(f"Incoming request: {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"Response status: {response.status_code}")
+    return response
 
 # Initialize Supabase client
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -95,6 +108,7 @@ class MatchRequest(BaseModel):
 # Health check
 @app.get("/")
 async def root():
+    logger.info("Health check endpoint called")
     return {
         "message": "Welcome to Project Jekyll & Hyde API",
         "status": "operational",
@@ -282,6 +296,7 @@ async def get_project(project_id: str):
 @app.get("/projects")
 async def get_projects(project_status: Optional[str] = "open", limit: int = 50):
     """Get all projects with optional status filter"""
+    logger.info(f"Fetching projects with status={project_status}, limit={limit}")
     try:
         query = supabase.table("projects").select("*")
         
@@ -290,12 +305,15 @@ async def get_projects(project_status: Optional[str] = "open", limit: int = 50):
         
         response = query.limit(limit).execute()
         
+        logger.info(f"Successfully fetched {len(response.data) if response.data else 0} projects")
+        
         return {
             "projects": response.data or [],
             "count": len(response.data) if response.data else 0
         }
     
     except Exception as e:
+        logger.error(f"Error fetching projects: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching projects: {str(e)}"
