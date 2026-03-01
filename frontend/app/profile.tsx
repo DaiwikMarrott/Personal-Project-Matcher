@@ -77,6 +77,7 @@ export default function ProfileScreen() {
   const [isTalking, setIsTalking] = useState(false);
   const audioRef = useRef<any>(null);
   const talkingAnimation = useRef(new Animated.Value(0)).current;
+  const rotationAnimation = useRef(new Animated.Value(0)).current;
 
   // Load profile data on mount
   useEffect(() => {
@@ -169,6 +170,7 @@ export default function ProfileScreen() {
 
   const startTalkingAnimation = () => {
     setIsTalking(true);
+    // Mouth movement
     Animated.loop(
       Animated.sequence([
         Animated.timing(talkingAnimation, {
@@ -183,12 +185,35 @@ export default function ProfileScreen() {
         }),
       ])
     ).start();
+    
+    // Rotation animation (alternating clockwise and anticlockwise)
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(rotationAnimation, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rotationAnimation, {
+          toValue: -1,
+          duration: 1600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rotationAnimation, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   };
 
   const stopTalkingAnimation = () => {
     setIsTalking(false);
     talkingAnimation.stopAnimation();
     talkingAnimation.setValue(0);
+    rotationAnimation.stopAnimation();
+    rotationAnimation.setValue(0);
   };
 
   const hearMrHyde = async () => {
@@ -487,7 +512,7 @@ export default function ProfileScreen() {
         </View>
       </View>
 
-      {/* Hyde Script Display with Animated Character */}
+      {/* Hyde Script Display with Animated Chicken */}
       {showHydeScript && hydeScript && (
         <View style={styles.hydeVerdictContainer}>
           <View style={styles.hydeCharacterSection}>
@@ -495,16 +520,28 @@ export default function ProfileScreen() {
               style={[
                 styles.hydeAvatar,
                 {
-                  transform: [{
-                    scaleY: talkingAnimation.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [1, 0.95]
-                    })
-                  }]
+                  transform: [
+                    {
+                      scaleY: talkingAnimation.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 0.95]
+                      })
+                    },
+                    {
+                      rotate: rotationAnimation.interpolate({
+                        inputRange: [-1, 0, 1],
+                        outputRange: ['-15deg', '0deg', '15deg']
+                      })
+                    }
+                  ]
                 }
               ]}
             >
-              <Text style={styles.hydeAvatarText}>😈</Text>
+              <Image
+                source={require('@/assets/images/hyde-chicken.png')}
+                style={styles.hydeChickenImage}
+                resizeMode="contain"
+              />
             </Animated.View>
             
             {isTalking && (
@@ -828,16 +865,19 @@ const styles = StyleSheet.create({
   // Hyde Animated Character Styles
   hydeVerdictContainer: {
     marginBottom: 20,
-    alignItems: 'center',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingHorizontal: 16,
   },
   hydeCharacterSection: {
     alignItems: 'center',
-    marginBottom: 12,
+    marginRight: 16,
+    minWidth: 120,
   },
   hydeAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius:40,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: '#FFE4F0',
     borderWidth: 3,
     borderColor: '#FF69B4',
@@ -848,9 +888,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 3,
+    overflow: 'hidden',
   },
-  hydeAvatarText: {
-    fontSize: 44,
+  hydeChickenImage: {
+    width: '100%',
+    height: '100%',
   },
   talkingIndicator: {
     flexDirection: 'row',
@@ -858,6 +900,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     height: 20,
     alignItems: 'flex-end',
+    justifyContent: 'center',
   },
   soundWave: {
     width: 4,
@@ -877,7 +920,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 2,
     borderColor: '#FF69B4',
-    maxWidth: '85%',
+    flex: 1,
     position: 'relative',
     shadowColor: Colors.shadow,
     shadowOffset: { width: 0, height: 2 },
@@ -887,17 +930,16 @@ const styles = StyleSheet.create({
   },
   speechBubbleTriangle: {
     position: 'absolute',
-    top: -10,
-    left: '50%',
-    marginLeft: -10,
+    top: 20,
+    left: -10,
     width: 0,
     height: 0,
-    borderLeftWidth: 10,
-    borderRightWidth: 10,
+    borderTopWidth: 10,
     borderBottomWidth: 10,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: '#FF69B4',
+    borderRightWidth: 10,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: '#FF69B4',
   },
   hydeScriptText: {
     fontSize: 16,

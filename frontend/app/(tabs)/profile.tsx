@@ -42,6 +42,7 @@ export default function ProfileTabScreen() {
   const [isTalking, setIsTalking] = useState(false);
   const audioRef = useRef<any>(null);
   const talkingAnimation = useRef(new Animated.Value(0)).current;
+  const rotationAnimation = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadProfileData();
@@ -99,6 +100,7 @@ export default function ProfileTabScreen() {
 
   const startTalkingAnimation = () => {
     setIsTalking(true);
+    // Mouth movement
     Animated.loop(
       Animated.sequence([
         Animated.timing(talkingAnimation, {
@@ -113,12 +115,35 @@ export default function ProfileTabScreen() {
         }),
       ])
     ).start();
+    
+    // Rotation animation (alternating clockwise and anticlockwise)
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(rotationAnimation, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rotationAnimation, {
+          toValue: -1,
+          duration: 1600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rotationAnimation, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   };
 
   const stopTalkingAnimation = () => {
     setIsTalking(false);
     talkingAnimation.stopAnimation();
     talkingAnimation.setValue(0);
+    rotationAnimation.stopAnimation();
+    rotationAnimation.setValue(0);
   };
 
   const hearMrHyde = async () => {
@@ -356,7 +381,7 @@ export default function ProfileTabScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Hyde Verdict Display with Talking Animation */}
+      {/* Hyde Verdict Display with Animated Chicken */}
       {showHydeScript && (
         <View style={styles.hydeVerdictContainer}>
           <View style={styles.hydeCharacterSection}>
@@ -371,19 +396,29 @@ export default function ProfileTabScreen() {
                         outputRange: [1, 0.95],
                       }),
                     },
+                    {
+                      rotate: rotationAnimation.interpolate({
+                        inputRange: [-1, 0, 1],
+                        outputRange: ['-15deg', '0deg', '15deg'],
+                      }),
+                    },
                   ],
                 },
               ]}
             >
-              <Text style={styles.hydeAvatarEmoji}>😈</Text>
-              {isTalking && (
-                <View style={styles.talkingIndicator}>
-                  <View style={[styles.soundWave, styles.wave1]} />
-                  <View style={[styles.soundWave, styles.wave2]} />
-                  <View style={[styles.soundWave, styles.wave3]} />
-                </View>
-              )}
+              <Image
+                source={require('@/assets/images/hyde-chicken.png')}
+                style={styles.hydeChickenImage}
+                resizeMode="contain"
+              />
             </Animated.View>
+            {isTalking && (
+              <View style={styles.talkingIndicator}>
+                <View style={[styles.soundWave, styles.wave1]} />
+                <View style={[styles.soundWave, styles.wave2]} />
+                <View style={[styles.soundWave, styles.wave3]} />
+              </View>
+            )}
             <View style={styles.hydeNameTag}>
               <Text style={styles.hydeNameText}>Mr. Hyde</Text>
             </View>
@@ -620,15 +655,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   hydeCharacterSection: {
     alignItems: 'center',
-    marginBottom: 16,
+    marginRight: 16,
+    minWidth: 120,
   },
   hydeAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: '#FFE4F0',
     justifyContent: 'center',
     alignItems: 'center',
@@ -639,16 +677,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
-    position: 'relative',
+    overflow: 'hidden',
   },
-  hydeAvatarEmoji: {
-    fontSize: 48,
+  hydeChickenImage: {
+    width: '100%',
+    height: '100%',
   },
   talkingIndicator: {
-    position: 'absolute',
-    bottom: -10,
+    marginTop: 8,
     flexDirection: 'row',
     gap: 3,
+    justifyContent: 'center',
   },
   soundWave: {
     width: 4,
@@ -687,18 +726,20 @@ const styles = StyleSheet.create({
     position: 'relative',
     borderWidth: 2,
     borderColor: '#FF69B4',
+    flex: 1,
   },
   speechBubbleTriangle: {
     position: 'absolute',
-    top: -10,
-    left: '50%',
-    marginLeft: -10,
+    top: 20,
+    left: -10,
     width: 0,
     height: 0,
-    borderLeftWidth: 10,
-    borderRightWidth: 10,
+    borderTopWidth: 10,
     borderBottomWidth: 10,
-    borderLeftColor: 'transparent',
+    borderRightWidth: 10,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderRightColor: '#FF69B4',
     borderRightColor: 'transparent',
     borderBottomColor: '#FF69B4',
   },
