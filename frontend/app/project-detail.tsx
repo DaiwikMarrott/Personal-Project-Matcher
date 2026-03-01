@@ -12,8 +12,10 @@ import {
   Image,
   TextInput,
   Alert,
+  Animated,
 } from 'react-native';
-import { useState, useEffect } from 'react';
+const drJekyllIcon = require('@/assets/images/dr-jekyll-icon.png');
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAuth } from '@/contexts/AuthContext';
@@ -51,9 +53,69 @@ export default function ProjectDetailScreen() {
   const [expressedInterest, setExpressedInterest] = useState(false);
   const [expressingInterest, setExpressingInterest] = useState(false);
 
+  // Animation refs for Jekyll icon
+  const talkingAnimation = useRef(new Animated.Value(0)).current;
+  const rotationAnimation = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     loadProjectData();
   }, []);
+
+  // Start Jekyll icon animation when roadmap is available
+  useEffect(() => {
+    if (project?.roadmap) {
+      startJekyllAnimation();
+    }
+    return () => {
+      stopJekyllAnimation();
+    };
+  }, [project?.roadmap]);
+
+  const startJekyllAnimation = () => {
+    // Gentle bobbing motion
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(talkingAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(talkingAnimation, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+    
+    // Rotation animation (alternating clockwise and anticlockwise)
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(rotationAnimation, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rotationAnimation, {
+          toValue: -1,
+          duration: 1600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rotationAnimation, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  };
+
+  const stopJekyllAnimation = () => {
+    talkingAnimation.stopAnimation();
+    talkingAnimation.setValue(0);
+    rotationAnimation.stopAnimation();
+    rotationAnimation.setValue(0);
+  };
 
   const loadProjectData = async () => {
     try {
@@ -483,10 +545,35 @@ export default function ProjectDetailScreen() {
           </View>
         </View>
 
-        {/* Roadmap */}
+        {/* Dr Jekyll's Recommendations */}
         {project.roadmap && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🗺️ AI-Generated Roadmap</Text>
+            <View style={styles.sectionTitleContainer}>
+              <Animated.View
+                style={[
+                  styles.jekyllIcon,
+                  {
+                    transform: [
+                      {
+                        scaleY: talkingAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [1, 0.95],
+                        }),
+                      },
+                      {
+                        rotate: rotationAnimation.interpolate({
+                          inputRange: [-1, 0, 1],
+                          outputRange: ['-15deg', '0deg', '15deg'],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <Image source={drJekyllIcon} style={styles.jekyllIconImage} resizeMode="contain" />
+              </Animated.View>
+              <Text style={styles.sectionTitle}>Dr Jekyll's Recommendations</Text>
+            </View>
             <View style={styles.roadmapCard}>
               {/* Check for phases array format */}
               {project.roadmap.phases && Array.isArray(project.roadmap.phases) ? (
@@ -851,6 +938,32 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#065f46',
     marginBottom: 12,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  jekyllIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#D1FAE5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: '#065f46',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: 'hidden',
+    marginRight: 16,
+  },
+  jekyllIconImage: {
+    width: '100%',
+    height: '100%',
   },
   sectionHeader: {
     flexDirection: 'row',

@@ -2,7 +2,7 @@
  * Project Detail Page
  * Shows detailed information about a specific project
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,9 @@ import {
   Platform,
   Alert,
   TextInput,
+  Animated,
 } from 'react-native';
+const drJekyllIcon = require('@/assets/images/dr-jekyll-icon.png');
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import Colors from '@/constants/colors';
@@ -61,6 +63,10 @@ export default function ProjectDetailScreen() {
   const [editedAvailability, setEditedAvailability] = useState('');
   const [editedImageUrl, setEditedImageUrl] = useState('');
 
+  // Animation refs for Jekyll icon
+  const talkingAnimation = useRef(new Animated.Value(0)).current;
+  const rotationAnimation = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     if (id) {
       fetchProject();
@@ -69,6 +75,62 @@ export default function ProjectDetailScreen() {
       }
     }
   }, [id, user]);
+
+  // Start Jekyll icon animation when roadmap is available
+  useEffect(() => {
+    if (project?.roadmap) {
+      startJekyllAnimation();
+    }
+    return () => {
+      stopJekyllAnimation();
+    };
+  }, [project?.roadmap]);
+
+  const startJekyllAnimation = () => {
+    // Gentle bobbing motion
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(talkingAnimation, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(talkingAnimation, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+    
+    // Rotation animation (alternating clockwise and anticlockwise)
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(rotationAnimation, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rotationAnimation, {
+          toValue: -1,
+          duration: 1600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rotationAnimation, {
+          toValue: 0,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  };
+
+  const stopJekyllAnimation = () => {
+    talkingAnimation.stopAnimation();
+    talkingAnimation.setValue(0);
+    rotationAnimation.stopAnimation();
+    rotationAnimation.setValue(0);
+  };
 
   const fetchUserProfile = async () => {
     if (!user) {
@@ -448,10 +510,35 @@ export default function ProjectDetailScreen() {
           )}
         </View>
 
-        {/* AI Roadmap */}
+        {/* Dr Jekyll's Recommendations */}
         {project.roadmap && project.roadmap.overview && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>🤖 AI-Generated Roadmap</Text>
+            <View style={styles.sectionTitleContainer}>
+              <Animated.View
+                style={[
+                  styles.jekyllIcon,
+                  {
+                    transform: [
+                      {
+                        scaleY: talkingAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [1, 0.95],
+                        }),
+                      },
+                      {
+                        rotate: rotationAnimation.interpolate({
+                          inputRange: [-1, 0, 1],
+                          outputRange: ['-15deg', '0deg', '15deg'],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <Image source={drJekyllIcon} style={styles.jekyllIconImage} resizeMode="contain" />
+              </Animated.View>
+              <Text style={styles.sectionTitle}>Dr Jekyll's Recommendations</Text>
+            </View>
             <View style={styles.roadmapCard}>
               <Text style={styles.roadmapText}>{project.roadmap.overview}</Text>
             </View>
@@ -726,6 +813,32 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: Colors.border.light,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  jekyllIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#D1FAE5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: '#065f46',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+    overflow: 'hidden',
+    marginRight: 16,
+  },
+  jekyllIconImage: {
+    width: '100%',
+    height: '100%',
   },
   roadmapText: {
     fontSize: 15,
