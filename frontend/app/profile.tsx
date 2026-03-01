@@ -67,6 +67,11 @@ export default function ProfileScreen() {
   const [showMajorPicker, setShowMajorPicker] = useState(false);
   const [showExperiencePicker, setShowExperiencePicker] = useState(false);
   const [hasProfile, setHasProfile] = useState(true);
+  
+  // Hyde verdict state
+  const [hydeLoading, setHydeLoading] = useState(false);
+  const [hydeScript, setHydeScript] = useState('');
+  const [showHydeScript, setShowHydeScript] = useState(false);
 
   // Load profile data on mount
   useEffect(() => {
@@ -135,6 +140,128 @@ export default function ProfileScreen() {
     } catch (error) {
       console.error('Error picking image:', error);
       Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+
+  const hearMrHyde = async () => {
+    if (!profileId) {
+      Alert.alert('Error', 'Profile not loaded');
+      return;
+    }
+
+    try {
+      setHydeLoading(true);
+      setShowHydeScript(false);
+      
+      console.log('Fetching Hyde verdict for profile:', profileId);
+      const response = await fetch(`${API_URL}/profile/${profileId}/hyde-verdict`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Server error:', errorText);
+        throw new Error('Failed to get Hyde verdict');
+      }
+
+      const data = await response.json();
+      console.log('Hyde verdict received:', {
+        hasScript: !!data.script,
+        hasAudio: !!data.audio_base64,
+        audioLength: data.audio_base64?.length,
+        isRoast: data.is_roast
+      });
+      
+      if (data.script) {
+        setHydeScript(data.script);
+        setShowHydeScript(true);
+      }
+
+      // Play audio if available
+      if (data.audio_base64 && Platform.OS === 'web') {
+        try {
+          console.log('Creating audio element...');
+          console.log('Audio base64 length:', data.audio_base64.length);
+          console.log('First 100 chars of base64:', data.audio_base64.substring(0, 100));
+          
+          // Create audio blob for better compatibility
+          const binaryString = atob(data.audio_base64);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: 'audio/mpeg' });
+          const audioUrl = URL.createObjectURL(blob);
+          
+          console.log('Created blob URL:', audioUrl);
+          
+          const audio = new Audio(audioUrl);
+          
+          // Add event listeners for debugging
+          audio.addEventListener('loadeddata', () => {
+            console.log('Audio loaded successfully, duration:', audio.duration);
+          });
+          
+          audio.addEventListener('canplay', () => {
+            console.log('Audio can play');
+          });
+          
+          audio.addEventListener('playing', () => {
+            console.log('Audio is playing');
+          });
+          
+          audio.addEventListener('error', (e) => {
+            console.error('Audio error event:', e);
+            console.error('Audio error details:', audio.error);
+            Alert.alert('Audio Error', `Failed to load audio: ${audio.error?.message || 'Unknown error'}`);
+          });
+          
+          audio.addEventListener('ended', () => {
+            console.log('Audio playback finished');
+            URL.revokeObjectURL(audioUrl); // Clean up
+          });
+          
+          // Set volume
+          audio.volume = 1.0;
+          
+          console.log('Attempting to play audio...');
+          const playPromise = audio.play();
+          
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                console.log('Audio playing successfully');
+              })
+              .catch(err => {
+                console.error('Error playing audio:', err);
+                console.error('Error name:', err.name);
+                console.error('Error message:', err.message);
+                if (err.name === 'NotAllowedError') {
+                  Alert.alert('Audio Blocked', 'Browser blocked audio playback. Please check your browser settings and allow audio.');
+                } else if (err.name === 'NotSupportedError') {
+                  Alert.alert('Audio Error', 'Your browser does not support this audio format.');
+                } else {
+                  Alert.alert('Audio Error', `Could not play audio: ${err.message}`);
+                }
+              });
+          }
+        } catch (err) {
+          console.error('Exception creating/playing audio:', err);
+          Alert.alert('Audio Error', 'Failed to create audio player: ' + err.message);
+        }
+      } else if (data.audio_base64) {
+        // For mobile, we'll need expo-av
+        console.log('Mobile platform - audio not implemented yet');
+        Alert.alert('Mr. Hyde Says', data.script);
+      } else {
+        console.log('No audio data received');
+        Alert.alert('Mr. Hyde Says', data.script);
+      }
+    } catch (error) {
+      console.error('Error getting Hyde verdict:', error);
+      Alert.alert('Error', 'Failed to get Mr. Hyde\'s verdict. Please try again.');
+    } finally {
+      setHydeLoading(false);
     }
   };
 
@@ -274,12 +401,34 @@ export default function ProfileScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <View style={styles.header}>
         <Text style={styles.title}>Your Profile</Text>
-        {!isEditing && (
-          <TouchableOpacity onPress={() => setIsEditing(true)} style={styles.editButton}>
-            <Text style={styles.editButtonText}>✏️ Edit</Text>
-          </TouchableOpacity>
-        )}
+        <View style={styles.headerButtons}>
+          {!isEditing && (
+            <>
+              <TouchableOpacity 
+                onPress={hearMrHyde} 
+                style={styles.hydeButton}
+                disabled={hydeLoading}
+              >
+                {hydeLoading ? (
+                  <Text style={styles.hydeButtonText}>...</Text>
+                ) : (
+                  <Text style={styles.hydeButtonText}>🔊 HEAR MR. HYDE</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setIsEditing(true)} style={styles.editButton}>
+                <Text style={styles.editButtonText}>✏️ Edit</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
+
+      {/* Hyde Script Display */}
+      {showHydeScript && hydeScript && (
+        <View style={styles.hydeScriptContainer}>
+          <Text style={styles.hydeScriptText}>{hydeScript}</Text>
+        </View>
+      )}
 
       {/* Profile Picture */}
       <View style={styles.imageSection}>
@@ -538,6 +687,28 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+  headerButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  hydeButton: {
+    backgroundColor: '#FF69B4', // Hot pink
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    shadowColor: Colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  hydeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
   editButton: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 20,
@@ -553,6 +724,21 @@ const styles = StyleSheet.create({
     color: Colors.text.inverse,
     fontSize: 16,
     fontWeight: '600',
+  },
+  hydeScriptContainer: {
+    backgroundColor: '#FFF0F8', // Light pink
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#FF69B4',
+  },
+  hydeScriptText: {
+    fontSize: 16,
+    color: Colors.text.primary,
+    fontWeight: '500',
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
   imageSection: {
     alignItems: 'center',
