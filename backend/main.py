@@ -1,16 +1,23 @@
 """
 FastAPI Backend for Project Jekyll & Hyde
 """
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import os
+import logging
 import google.generativeai as genai
+import base64
+import mimetypes
 
 from ai_service import generate_project_roadmap, generate_embedding
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -26,6 +33,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info(f"Incoming request: {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"Response status: {response.status_code}")
+    return response
 
 # Initialize Supabase client
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -46,6 +61,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 # Pydantic Models
 class ProfileCreate(BaseModel):
+    auth_user_id: str  # Supabase auth.users ID
     first_name: str
     last_name: str
     email: EmailStr
@@ -56,6 +72,7 @@ class ProfileCreate(BaseModel):
     experience_level: Optional[str] = "beginner"
     availability: Optional[Dict[str, Any]] = {}
     urls: Optional[Dict[str, str]] = {}
+    profile_picture_url: Optional[str] = None
 
 
 class ProfileResponse(BaseModel):
@@ -66,6 +83,10 @@ class ProfileResponse(BaseModel):
     major: Optional[str]
     skills: Optional[List[str]]
     experience_level: Optional[str]
+    profile_picture_url: Optional[str]
+    interests: Optional[str]
+    availability: Optional[Dict[str, Any]]
+    urls: Optional[Dict[str, str]]
 
 
 class ProjectCreate(BaseModel):
@@ -95,6 +116,7 @@ class MatchRequest(BaseModel):
 # Health check
 @app.get("/")
 async def root():
+    logger.info("Health check endpoint called")
     return {
         "message": "Welcome to Project Jekyll & Hyde API",
         "status": "operational",
@@ -102,22 +124,129 @@ async def root():
     }
 
 
+# Upload Profile Picture
+@app.post("/upload-avatar/{user_id}")
+async def upload_avatar(user_id: str, file: UploadFile = File(...)):
+    """
+    Upload a profile picture to Supabase Storage.
+    Returns the public URL of the uploaded image.
+    """
+    try:
+        # Validate file type
+        allowed_types = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File type {file.content_type} not allowed. Use JPEG, PNG, WebP, or GIF."
+            )
+        
+        # Validate file size (5MB max)
+        file_content = await file.read()
+        if len(file_content) > 5 * 1024 * 1024:  # 5MB
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File size must be less than 5MB"
+            )
+        
+        # Upload to Supabase Storage
+        file_path = f"{user_id}/avatar.jpg"
+        
+        try:
+            storage_response = supabase.storage.from_("avatars").upload(
+                file_path,
+                file_content,
+                {"content-type": file.content_type, "upsert": "true"}
+            )
+            
+            logger.info(f"Storage response: {storage_response}")
+            
+        except Exception as storage_error:
+            logger.error(f"Storage upload error: {str(storage_error)}")
+            # Check if it's a bucket/policy issue
+            if "not found" in str(storage_error).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Storage bucket not configured. Please run STORAGE_POLICIES.sql in Supabase SQL Editor."
+                )
+            raise
+        
+        # Get public URL
+        public_url = supabase.storage.from_("avatars").get_public_url(file_path)
+        
+        logger.info(f"Successfully uploaded avatar for user {user_id}, URL: {public_url}")
+        
+        return {
+            "url": public_url,
+            "message": "Avatar uploaded successfully"
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading avatar: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error uploading avatar: {str(e)}"
+        )
+
+
+# Check if user has profile
+@app.get("/profile/check/{auth_user_id}")
+async def check_profile_exists(auth_user_id: str):
+    """
+    Check if a user has created a profile.
+    Returns profile data if exists, or indicates profile doesn't exist.
+    """
+    try:
+        response = supabase.table("profiles").select("*").eq("auth_user_id", auth_user_id).execute()
+        
+        if response.data and len(response.data) > 0:
+            return {
+                "exists": True,
+                "profile": response.data[0]
+            }
+        else:
+            return {
+                "exists": False,
+                "profile": None
+            }
+    
+    except Exception as e:
+        logger.error(f"Error checking profile: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error checking profile: {str(e)}"
+        )
+
+
 # Create Profile Endpoint
 @app.post("/profile", response_model=ProfileResponse, status_code=status.HTTP_201_CREATED)
 async def create_profile(profile: ProfileCreate):
     """
     Create a new user profile with AI-generated embedding for semantic matching.
+    The auth_user_id should match the Supabase auth.users.id.
     """
     try:
+        logger.info(f"Creating profile for user {profile.auth_user_id}")
+        
+        # Check if profile already exists
+        existing = supabase.table("profiles").select("id").eq("auth_user_id", profile.auth_user_id).execute()
+        if existing.data and len(existing.data) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Profile already exists for this user"
+            )
+        
         # Generate bio text for embedding
         bio_text = f"{profile.major or ''} {profile.interests or ''} {' '.join(profile.skills or [])}".strip()
         
         # Generate embedding using Gemini
-        bio_embedding = await generate_embedding(bio_text)
+        bio_embedding = await generate_embedding(bio_text) if bio_text else None
         
         # Insert into Supabase
         data = profile.dict()
-        data['bio_embedding'] = bio_embedding
+        if bio_embedding:
+            data['bio_embedding'] = bio_embedding
         
         response = supabase.table("profiles").insert(data).execute()
         
@@ -127,9 +256,13 @@ async def create_profile(profile: ProfileCreate):
                 detail="Failed to create profile"
             )
         
+        logger.info(f"Successfully created profile with ID {response.data[0]['id']}")
         return response.data[0]
     
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Error creating profile: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating profile: {str(e)}"
@@ -282,6 +415,7 @@ async def get_project(project_id: str):
 @app.get("/projects")
 async def get_projects(project_status: Optional[str] = "open", limit: int = 50):
     """Get all projects with optional status filter"""
+    logger.info(f"Fetching projects with status={project_status}, limit={limit}")
     try:
         query = supabase.table("projects").select("*")
         
@@ -290,12 +424,15 @@ async def get_projects(project_status: Optional[str] = "open", limit: int = 50):
         
         response = query.limit(limit).execute()
         
+        logger.info(f"Successfully fetched {len(response.data) if response.data else 0} projects")
+        
         return {
             "projects": response.data or [],
             "count": len(response.data) if response.data else 0
         }
     
     except Exception as e:
+        logger.error(f"Error fetching projects: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching projects: {str(e)}"

@@ -1,0 +1,7 @@
+# Test files
+tests/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/

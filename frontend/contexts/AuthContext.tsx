@@ -7,6 +7,12 @@ import { createClient, Session, User, SupabaseClient } from '@supabase/supabase-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
+const API_URL = Platform.OS === 'web' 
+  ? 'http://localhost:8000' 
+  : Platform.OS === 'android' 
+    ? 'http://10.0.2.2:8000' 
+    : 'http://localhost:8000';
+
 // Initialize Supabase client
 // Use hardcoded fallbacks for development if env vars aren't loaded
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://reyezzmxvvvpapxkjlvf.supabase.co';
@@ -41,6 +47,7 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
+  checkProfileExists: (userId: string) => Promise<{ exists: boolean; profile: any | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -172,6 +179,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const checkProfileExists = async (userId: string): Promise<{ exists: boolean; profile: any | null }> => {
+    try {
+      const response = await fetch(`${API_URL}/profile/check/${userId}`);
+      if (!response.ok) {
+        throw new Error('Failed to check profile');
+      }
+      const data = await response.json();
+      return data;
+    } catch (error: any) {
+      console.error('Error checking profile:', error.message);
+      return { exists: false, profile: null };
+    }
+  };
+
   const value: AuthContextType = {
     user,
     session,
@@ -181,6 +202,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signInWithGoogle,
     signOut,
     resetPassword,
+    checkProfileExists,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
