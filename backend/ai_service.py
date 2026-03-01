@@ -1,6 +1,6 @@
 """ 
 AI Service for Project Jekyll & Hyde
-Handles AI tasks: roadmap generation and embeddings using Google Gemini
+Handles AI tasks: roadmap generation, embeddings, and voice generation
 """
 import warnings
 # Suppress the deprecation warning for google.generativeai
@@ -10,6 +10,8 @@ import json
 from typing import Dict, Any, List
 import os
 from dotenv import load_dotenv
+from elevenlabs import ElevenLabs, VoiceSettings
+import base64
 
 load_dotenv()
 
@@ -17,6 +19,12 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+
+# Configure ElevenLabs
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+elevenlabs_client = None
+if ELEVENLABS_API_KEY:
+    elevenlabs_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
 
 
 async def generate_project_roadmap(title: str, description: str) -> Dict[str, Any]:
@@ -196,7 +204,7 @@ Generate a short, energetic hype script (2-3 sentences max) that:
 Use high-energy language. Be enthusiastic but authentic.
 """
         
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('models/gemini-2.5-flash')
         response = model.generate_content(prompt)
         
         return response.text.strip()
@@ -207,6 +215,175 @@ Use high-energy language. Be enthusiastic but authentic.
             return "Your profile is so generic, it could be anyone. Spice it up!"
         else:
             return "This project is incredible! Join the team and build something amazing!"
+
+
+async def generate_hyde_voice(script_text: str) -> bytes:
+    """
+    Generate voice audio from text using ElevenLabs.
+    Uses a sassy, energetic voice for Mr. Hyde.
+    
+    Args:
+        script_text: The text to convert to speech
+    
+    Returns:
+        Audio bytes (MP3 format)
+    """
+    try:
+        print(f"[Hyde Voice] Starting audio generation for script: {script_text[:50]}...")
+        
+        if not elevenlabs_client:
+            raise Exception("ElevenLabs API key not configured")
+        
+        print("[Hyde Voice] ElevenLabs client configured")
+        
+        # Generate voice using ElevenLabs
+        # Voice ID: Adam - deep, authoritative voice with evil undertone
+        print("[Hyde Voice] Calling ElevenLabs API...")
+        audio_generator = elevenlabs_client.text_to_speech.convert(
+            voice_id="pNInz6obpgDQGcFmaJgB",  # Adam - deep voice
+            text=script_text,
+            model_id="eleven_turbo_v2_5",  # Turbo model for faster speech
+            voice_settings=VoiceSettings(
+                stability=0.35,  # Lower for more dramatic, menacing variation
+                similarity_boost=0.85,  # Higher to maintain voice character
+                style=1.0,  # Maximum expressiveness for evil tone
+                use_speaker_boost=True
+            )
+        )
+        
+        print("[Hyde Voice] Collecting audio chunks...")
+        # Collect audio chunks
+        audio_bytes = b""
+        chunk_count = 0
+        for chunk in audio_generator:
+            if isinstance(chunk, bytes):
+                audio_bytes += chunk
+                chunk_count += 1
+        
+        print(f"[Hyde Voice] Collected {chunk_count} chunks, total size: {len(audio_bytes)} bytes")
+        
+        if len(audio_bytes) == 0:
+            raise Exception("No audio data generated")
+        
+        return audio_bytes
+    
+    except Exception as e:
+        print(f"[Hyde Voice] Error generating voice: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+
+async def generate_hyde_verdict(profile_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Generate Mr. Hyde's complete verdict on a profile.
+    Analyzes the profile and returns both the script and audio.
+    
+    Args:
+        profile_data: Dictionary containing profile information
+    
+    Returns:
+        Dictionary with 'script' (text) and 'audio' (base64 encoded MP3)
+    """
+    try:
+        # Build profile summary
+        profile_parts = []
+        if profile_data.get('first_name'):
+            profile_parts.append(f"Name: {profile_data['first_name']}")
+        if profile_data.get('major'):
+            profile_parts.append(f"Major: {profile_data['major']}")
+        if profile_data.get('skills'):
+            skills_str = ', '.join(profile_data['skills']) if isinstance(profile_data['skills'], list) else profile_data['skills']
+            profile_parts.append(f"Skills: {skills_str}")
+        if profile_data.get('interests'):
+            profile_parts.append(f"Interests: {profile_data['interests']}")
+        if profile_data.get('experience_level'):
+            profile_parts.append(f"Experience: {profile_data['experience_level']}")
+        
+        profile_text = ". ".join(profile_parts)
+        
+        # Determine if profile is bland or good
+        # Bland = missing key fields or very generic content
+        is_bland = (
+            not profile_data.get('skills') or 
+            (isinstance(profile_data.get('skills'), list) and len(profile_data['skills']) < 2) or
+            not profile_data.get('interests') or
+            len(profile_data.get('interests', '')) < 20
+        )
+        
+        # Generate script
+        mode = "roast" if is_bland else "hype"
+        
+        # Create a more profile-specific prompt
+        if mode == "roast":
+            prompt = f"""
+You are Mr. Hyde, a brutally honest but hilarious roast master who helps people improve their profiles. You're sassy, witty, and always constructive.
+
+Profile to roast: {profile_text}
+
+Generate a SHORT, punchy roast (2-3 sentences max) that:
+- Points out what's missing or too vague
+- Uses humor and sass (not mean-spirited)
+- Ends with motivation to improve
+- Keep it under 50 words
+
+Examples of your style:
+- "Okay, 'computer science' and 'coding' - groundbreaking stuff. Every other CS student says that. What makes YOU different? Add your actual projects!"
+- "Your interests are more generic than a stock photo. 'Technology'? Really? Get specific or get ignored!"
+"""
+        else:
+            prompt = f"""
+You are Mr. Hyde, an enthusiastic hype-man who gets genuinely excited about impressive profiles. You're energetic and genuine.
+
+Profile to hype up: {profile_text}
+
+Generate a SHORT, energetic hype script (2-3 sentences max) that:
+- Highlights specific strengths
+- Creates excitement about collaborating with this person
+- Sounds genuinely impressed
+- Keep it under 50 words
+
+Examples of your style:
+- "Now THIS is what I'm talking about! Machine learning AND mobile dev? You're the complete package. Projects are gonna be fighting over you!"
+- "Finally, someone who knows their stuff! That skill set is exactly what teams are looking for. You're going places!"
+"""
+        
+        print(f"[Hyde Verdict] Generating script with mode: {mode}")
+        model = genai.GenerativeModel('models/gemini-flash-latest')
+        response = model.generate_content(prompt)
+        script = response.text.strip()
+        
+        # Remove any quotes that Gemini might add
+        script = script.replace('"', '').replace('"', '').replace('"', '')
+        print(f"[Hyde Verdict] Generated script: {script}")
+        
+        # Generate voice audio
+        print("[Hyde Verdict] Generating voice audio...")
+        audio_bytes = await generate_hyde_voice(script)
+        print(f"[Hyde Verdict] Voice generated, encoding to base64...")
+        audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+        print(f"[Hyde Verdict] Base64 encoded, length: {len(audio_base64)}")
+        
+        return {
+            "script": script,
+            "audio_base64": audio_base64,
+            "audio_format": "mp3",
+            "is_roast": is_bland
+        }
+    
+    except Exception as e:
+        print(f"[Hyde Verdict] Error generating Hyde verdict: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return a fallback response
+        fallback_script = "Your profile needs some work. Add more details about your skills and interests!"
+        return {
+            "script": fallback_script,
+            "audio_base64": "",
+            "audio_format": "mp3",
+            "is_roast": True,
+            "error": str(e)
+        }
 
 
 async def generate_profile_summary(profile_data: Dict[str, Any]) -> str:

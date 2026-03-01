@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hyde Audio Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        h1 {
+            color: #E31C45;
+        }
+        button {
+            background: #E31C45;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 8px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #c01838;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        #log {
+            background: #000;
+            padding: 15px;
+            border-radius: 8px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 3px;
+        }
+        .log-success { color: #10b981; }
+        .log-error { color: #ef4444; }
+        .log-warning { color: #f59e0b; }
+        .log-info { color: #3b82f6; }
+        input {
+            padding: 10px;
+            font-size: 14px;
+            width: 400px;
+            border-radius: 4px;
+            border: 1px solid #666;
+            background: #2a2a2a;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <h1>⚡ Mr. Hyde Audio Test</h1>
+    
+    <div style="margin: 20px 0;">
+        <p>Backend URL: <input id="backendURL" value="http://localhost:8000" /></p>
+        <p>Profile ID: <input id="profileID" placeholder="Enter profile UUID" /></p>
+    </div>
+    
+    <button id="testBtn">Test Hyde Verdict</button>
+    <button id="clearBtn">Clear Log</button>
+    
+    <div id="log"></div>
+
+    <script>
+        const logDiv = document.getElementById('log');
+        const testBtn = document.getElementById('testBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const backendURLInput = document.getElementById('backendURL');
+        const profileIDInput = document.getElementById('profileID');
+
+        function log(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        clearBtn.onclick = () => {
+            logDiv.innerHTML = '';
+        };
+
+        testBtn.onclick = async () => {
+            const backendURL = backendURLInput.value;
+            const profileID = profileIDInput.value;
+
+            if (!profileID) {
+                log('❌ Please enter a profile ID', 'error');
+                return;
+            }
+
+            testBtn.disabled = true;
+            log('='.repeat(80), 'info');
+            log('🚀 Starting Hyde Verdict Test', 'info');
+            log('='.repeat(80), 'info');
+
+            try {
+                log(`📍 Backend URL: ${backendURL}`, 'info');
+                log(`👤 Profile ID: ${profileID}`, 'info');
+                log('', 'info');
+
+                log('📡 Step 1: Calling Hyde verdict endpoint...', 'info');
+                const url = `${backendURL}/profile/${profileID}/hyde-verdict`;
+                log(`   URL: ${url}`, 'info');
+
+                const response = await fetch(url, { method: 'POST' });
+                
+                log(`✅ Response received: ${response.status} ${response.statusText}`, 'success');
+                log(`   OK: ${response.ok}`, 'info');
+
+                const data = await response.json();
+                log('', 'info');
+                log('📦 Step 2: Response Data Structure', 'info');
+                log('   Fields present:', 'info');
+                for (const key in data) {
+                    if (key === 'audio_base64' && data[key]) {
+                        log(`   - ${key}: [${data[key].length} chars]`, 'info');
+                    } else {
+                        log(`   - ${key}: ${JSON.stringify(data[key]).substring(0, 100)}`, 'info');
+                    }
+                }
+
+                if (!data.audio_base64) {
+                    log('', 'info');
+                    log('❌ NO AUDIO DATA IN RESPONSE', 'error');
+                    log(`   Error: ${data.error || 'Unknown error'}`, 'error');
+                    testBtn.disabled = false;
+                    return;
+                }
+
+                log('', 'info');
+                log('🔊 Step 3: Processing Audio Data', 'info');
+                const audioB64 = data.audio_base64;
+                log(`   Base64 length: ${audioB64.length} chars`, 'info');
+                log(`   First 50 chars: ${audioB64.substring(0, 50)}...`, 'info');
+                log(`   Last 50 chars: ...${audioB64.substring(audioB64.length - 50)}`, 'info');
+
+                log('', 'info');
+                log('🔄 Step 4: Decoding Base64 to Binary', 'info');
+                try {
+                    const binaryString = atob(audioB64);
+                    log(`   ✅ atob() successful`, 'success');
+                    log(`   Binary string length: ${binaryString.length}`, 'info');
+                    log(`   First bytes (hex): ${Array.from(binaryString.substring(0, 10)).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' ')}`, 'info');
+
+                    log('', 'info');
+                    log('📝 Step 5: Creating Uint8Array', 'info');
+                    const bytes = new Uint8Array(binaryString.length);
+                    for (let i = 0; i < binaryString.length; i++) {
+                        bytes[i] = binaryString.charCodeAt(i);
+                    }
+                    log(`   ✅ Uint8Array created: ${bytes.length} bytes (${(bytes.length / 1024).toFixed(1)} KB)`, 'success');
+
+                    log('', 'info');
+                    log('🎵 Step 6: Creating Audio Blob', 'info');
+                    const blob = new Blob([bytes], { type: 'audio/mpeg' });
+                    log(`   ✅ Blob created`, 'success');
+                    log(`   Blob size: ${blob.size} bytes`, 'info');
+                    log(`   Blob type: ${blob.type}`, 'info');
+
+                    log('', 'info');
+                    log('🔗 Step 7: Creating Blob URL', 'info');
+                    const audioURL = URL.createObjectURL(blob);
+                    log(`   ✅ Blob URL created: ${audioURL}`, 'success');
+
+                    log('', 'info');
+                    log('🎧 Step 8: Creating Audio Element', 'info');
+                    const audio = new Audio(audioURL);
+                    log(`   ✅ Audio element created`, 'success');
+
+                    // Add event listeners
+                    audio.addEventListener('loadstart', () => log('   [Event] loadstart', 'info'));
+                    audio.addEventListener('loadedmetadata', () => log('   [Event] loadedmetadata', 'success'));
+                    audio.addEventListener('loadeddata', () => {
+                        log(`   [Event] loadeddata - Duration: ${audio.duration.toFixed(2)}s`, 'success');
+                    });
+                    audio.addEventListener('canplay', () => log('   [Event] canplay', 'success'));
+                    audio.addEventListener('canplaythrough', () => log('   [Event] canplaythrough', 'success'));
+                    audio.addEventListener('play', () => log('   [Event] play - Audio is playing! 🎵', 'success'));
+                    audio.addEventListener('playing', () => log('   [Event] playing', 'success'));
+                    audio.addEventListener('pause', () => log('   [Event] pause', 'warning'));
+                    audio.addEventListener('ended', () => {
+                        log('   [Event] ended - Audio finished! ✅', 'success');
+                        testBtn.disabled = false;
+                    });
+                    audio.addEventListener('error', (e) => {
+                        log(`   [Event] error - ${audio.error.message}`, 'error');
+                        log(`   Error code: ${audio.error.code}`, 'error');
+                        testBtn.disabled = false;
+                    });
+
+                    log('', 'info');
+                    log('▶️  Step 9: Calling audio.play()', 'info');
+                    await audio.play();
+                    log('   ✅ play() promise resolved', 'success');
+                    log('', 'info');
+                    log('='.repeat(80), 'success');
+                    log('🎉 SUCCESS - Audio should be playing now!', 'success');
+                    log('='.repeat(80), 'success');
+
+                } catch (decodeError) {
+                    log('', 'info');
+                    log(`❌ Error during audio processing: ${decodeError.message}`, 'error');
+                    log(`   Stack: ${decodeError.stack}`, 'error');
+                    testBtn.disabled = false;
+                }
+
+            } catch (error) {
+                log('', 'info');
+                log(`❌ FATAL ERROR: ${error.message}`, 'error');
+                log(`   Stack: ${error.stack}`, 'error');
+                testBtn.disabled = false;
+            }
+        };
+
+        log('🎬 Test page loaded. Enter a profile ID and click "Test Hyde Verdict"', 'info');
+        log('   Tip: Open browser DevTools (F12) to see additional console output', 'info');
+    </script>
+</body>
+</html>
