@@ -65,17 +65,18 @@ export default function ExploreScreen() {
   };
 
   useEffect(() => {
-    // Filter projects based on search query
+    // Filter projects based on search query (searches project name and tags only)
     if (searchQuery.trim() === '') {
       setFilteredProjects(projects);
     } else {
       const query = searchQuery.toLowerCase();
-      const filtered = projects.filter(
-        (project) =>
-          project.title.toLowerCase().includes(query) ||
-          project.description.toLowerCase().includes(query) ||
-          (project.tags && project.tags.some((tag: string) => tag.toLowerCase().includes(query)))
-      );
+      const filtered = projects.filter((project) => {
+        const titleMatch = project.title.toLowerCase().includes(query);
+        const tagsMatch = project.tags && project.tags.some((tag: string) => 
+          tag.toLowerCase().includes(query)
+        );
+        return titleMatch || tagsMatch;
+      });
       setFilteredProjects(filtered);
     }
   }, [searchQuery, projects]);
