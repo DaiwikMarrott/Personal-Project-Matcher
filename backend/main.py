@@ -1058,6 +1058,19 @@ async def express_interest(project_id: str, interest_data: dict):
                 detail="You cannot express interest in your own project"
             )
         
+        # Check if user has been denied from this project
+        try:
+            denial_check = supabase.table("project_denials").select("id").eq("project_id", project_id).eq("denied_user_id", sender_id).execute()
+            if denial_check.data and len(denial_check.data) > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You have been denied from this project and cannot re-apply"
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning(f"Could not check project_denials (table may not exist yet): {str(e)}")
+
         # Check if already expressed interest
         existing_notification = supabase.table("notifications").select("*").eq("project_id", project_id).eq("sender_id", sender_id).eq("notification_type", "interest").execute()
         
@@ -1209,6 +1222,324 @@ async def mark_all_notifications_read(profile_id: str):
         )
 
 
+
+# ====== REQUEST REVIEW – APPROVE / DENY ======
+
+@app.get("/notifications/{notification_id}/request-details")
+async def get_request_details(notification_id: str):
+    """Return full details for an interest notification: requester profile + project."""
+    try:
+        notif_response = supabase.table("notifications").select("*").eq("id", notification_id).execute()
+        if not notif_response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+
+        notification = notif_response.data[0]
+
+        sender_response = supabase.table("profiles").select("*").eq("id", notification['sender_id']).execute()
+        requester = sender_response.data[0] if sender_response.data else {}
+
+        project = {}
+        if notification.get('project_id'):
+            project_response = supabase.table("projects").select("id, title, description, tags, duration, availability_needed, status, owner_id").eq("id", notification['project_id']).execute()
+            project = project_response.data[0] if project_response.data else {}
+
+        return {"notification": notification, "requester": requester, "project": project}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching request details: {str(e)}")
+
+
+@app.post("/projects/{project_id}/approve/{requester_id}")
+async def approve_request(project_id: str, requester_id: str, body: dict):
+    """Approve a join request – creates a chat and notifies the requester."""
+    try:
+        owner_id = body.get('owner_id')
+        notification_id = body.get('notification_id')
+
+        if not owner_id:
+            raise HTTPException(status_code=400, detail="owner_id required")
+
+        project_response = supabase.table("projects").select("title, owner_id").eq("id", project_id).execute()
+        if not project_response.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        project = project_response.data[0]
+        if project['owner_id'] != owner_id:
+            raise HTTPException(status_code=403, detail="Not the project owner")
+
+        # Find or create chat (check both participant orderings)
+        chat_id = None
+        try:
+            for p1, p2 in [(owner_id, requester_id), (requester_id, owner_id)]:
+                existing = supabase.table("chats").select("id").eq("project_id", project_id).eq("participant1_id", p1).eq("participant2_id", p2).execute()
+                if existing.data:
+                    chat_id = existing.data[0]['id']
+                    break
+
+            if not chat_id:
+                chat_response = supabase.table("chats").insert({
+                    "project_id": project_id,
+                    "project_title": project['title'],
+                    "participant1_id": owner_id,
+                    "participant2_id": requester_id,
+                }).execute()
+                if not chat_response.data:
+                    raise HTTPException(status_code=500, detail="Failed to create chat")
+                chat_id = chat_response.data[0]['id']
+        except HTTPException:
+            raise
+        except Exception as e:
+            if 'PGRST205' in str(e) or 'schema cache' in str(e).lower() or 'chats' in str(e).lower():
+                raise HTTPException(
+                    status_code=503,
+                    detail="Database tables not set up yet. Please run backend/migrations/chat_system.sql in the Supabase SQL Editor."
+                )
+            raise
+
+        # Delete the original interest notification
+        if notification_id:
+            supabase.table("notifications").delete().eq("id", notification_id).execute()
+        else:
+            supabase.table("notifications").delete().eq("project_id", project_id).eq("sender_id", requester_id).eq("notification_type", "interest").execute()
+
+        # Send approval notification to requester with reference_id = chat_id
+        supabase.table("notifications").insert({
+            "recipient_id": requester_id,
+            "sender_id": owner_id,
+            "project_id": project_id,
+            "notification_type": "approved",
+            "message": f"Your request to join '{project['title']}' was approved! You can now chat with the project owner.",
+            "reference_id": chat_id,
+            "read": False,
+        }).execute()
+
+        logger.info(f"Approved: owner={owner_id}, requester={requester_id}, project={project_id}, chat={chat_id}")
+        return {"success": True, "chat_id": chat_id, "message": "Request approved, chat created"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error approving request: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error approving request: {str(e)}")
+
+
+@app.post("/projects/{project_id}/deny/{requester_id}")
+async def deny_request(project_id: str, requester_id: str, body: dict):
+    """Deny a join request – adds to denials list and notifies the requester."""
+    try:
+        owner_id = body.get('owner_id')
+        notification_id = body.get('notification_id')
+
+        if not owner_id:
+            raise HTTPException(status_code=400, detail="owner_id required")
+
+        project_response = supabase.table("projects").select("title, owner_id").eq("id", project_id).execute()
+        if not project_response.data:
+            raise HTTPException(status_code=404, detail="Project not found")
+        project = project_response.data[0]
+        if project['owner_id'] != owner_id:
+            raise HTTPException(status_code=403, detail="Not the project owner")
+
+        # Upsert into project_denials
+        try:
+            supabase.table("project_denials").upsert({
+                "project_id": project_id,
+                "denied_user_id": requester_id,
+                "denied_by": owner_id,
+            }, on_conflict="project_id,denied_user_id").execute()
+        except Exception as e:
+            logger.warning(f"Upsert denial warning: {str(e)}")
+
+        # Delete the original interest notification
+        if notification_id:
+            supabase.table("notifications").delete().eq("id", notification_id).execute()
+        else:
+            supabase.table("notifications").delete().eq("project_id", project_id).eq("sender_id", requester_id).eq("notification_type", "interest").execute()
+
+        # Send denial notification to requester
+        supabase.table("notifications").insert({
+            "recipient_id": requester_id,
+            "sender_id": owner_id,
+            "project_id": project_id,
+            "notification_type": "denied",
+            "message": f"Your request to join '{project['title']}' was not accepted at this time.",
+            "read": False,
+        }).execute()
+
+        logger.info(f"Denied: owner={owner_id}, requester={requester_id}, project={project_id}")
+        return {"success": True, "message": "Request denied"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error denying request: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error denying request: {str(e)}")
+
+
+@app.get("/projects/{project_id}/denials")
+async def get_project_denials(project_id: str, owner_id: str):
+    """Get all denied users for a project (owner only)."""
+    try:
+        project_response = supabase.table("projects").select("owner_id").eq("id", project_id).execute()
+        if not project_response.data or project_response.data[0]['owner_id'] != owner_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        denials_response = supabase.table("project_denials").select("id, project_id, denied_user_id, denied_at").eq("project_id", project_id).execute()
+        denials = denials_response.data or []
+
+        enriched = []
+        for denial in denials:
+            try:
+                profile_resp = supabase.table("profiles").select("id, first_name, last_name, profile_picture_url, major, skills").eq("id", denial['denied_user_id']).execute()
+                if profile_resp.data:
+                    denial['denied_user'] = profile_resp.data[0]
+            except Exception:
+                pass
+            enriched.append(denial)
+
+        return {"denials": enriched, "count": len(enriched)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching denials: {str(e)}")
+
+
+@app.delete("/projects/{project_id}/denials/{user_id}")
+async def remove_project_denial(project_id: str, user_id: str, body: dict):
+    """Remove a user from the denial list (unban) – owner only."""
+    try:
+        owner_id = body.get('owner_id')
+        if not owner_id:
+            raise HTTPException(status_code=400, detail="owner_id required")
+
+        project_response = supabase.table("projects").select("owner_id").eq("id", project_id).execute()
+        if not project_response.data or project_response.data[0]['owner_id'] != owner_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        supabase.table("project_denials").delete().eq("project_id", project_id).eq("denied_user_id", user_id).execute()
+        return {"success": True, "message": "User removed from denial list"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error removing denial: {str(e)}")
+
+
+@app.get("/profile/{profile_id}/denied-project-ids")
+async def get_denied_project_ids(profile_id: str):
+    """Return all project IDs from which this user has been denied."""
+    try:
+        response = supabase.table("project_denials").select("project_id").eq("denied_user_id", profile_id).execute()
+        return {"denied_project_ids": [row['project_id'] for row in (response.data or [])]}
+    except Exception as e:
+        logger.warning(f"Could not fetch denied project IDs (table may not exist yet): {str(e)}")
+        return {"denied_project_ids": []}
+
+
+# ====== CHATS ======
+
+@app.get("/profile/{profile_id}/chats")
+async def get_user_chats(profile_id: str):
+    """Get all chats for a user with the other participant's info and last message."""
+    try:
+        try:
+            chats1 = supabase.table("chats").select("*").eq("participant1_id", profile_id).execute()
+            chats2 = supabase.table("chats").select("*").eq("participant2_id", profile_id).execute()
+        except Exception as e:
+            logger.warning(f"Could not fetch chats (table may not exist yet): {str(e)}")
+            return {"chats": [], "count": 0}
+        all_chats = (chats1.data or []) + (chats2.data or [])
+        all_chats.sort(key=lambda x: x.get('last_message_at', x.get('created_at', '')), reverse=True)
+
+        enriched = []
+        for chat in all_chats:
+            other_id = chat['participant2_id'] if chat['participant1_id'] == profile_id else chat['participant1_id']
+
+            other_resp = supabase.table("profiles").select("id, first_name, last_name, profile_picture_url").eq("id", other_id).execute()
+            if other_resp.data:
+                chat['other_participant'] = other_resp.data[0]
+
+            last_msg = supabase.table("messages").select("content, created_at, sender_id").eq("chat_id", chat['id']).order("created_at", desc=True).limit(1).execute()
+            if last_msg.data:
+                chat['last_message'] = last_msg.data[0]
+
+            unread = supabase.table("messages").select("id").eq("chat_id", chat['id']).eq("read", False).neq("sender_id", profile_id).execute()
+            chat['unread_count'] = len(unread.data or [])
+
+            enriched.append(chat)
+
+        return {"chats": enriched, "count": len(enriched)}
+
+    except Exception as e:
+        logger.error(f"Error fetching chats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching chats: {str(e)}")
+
+
+@app.get("/chat/{chat_id}/messages")
+async def get_chat_messages(chat_id: str, profile_id: str):
+    """Get all messages for a chat and mark incoming messages as read."""
+    try:
+        chat_resp = supabase.table("chats").select("participant1_id, participant2_id").eq("id", chat_id).execute()
+        if not chat_resp.data:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        chat = chat_resp.data[0]
+        if profile_id not in [chat['participant1_id'], chat['participant2_id']]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        messages_resp = supabase.table("messages").select("*").eq("chat_id", chat_id).order("created_at", desc=False).execute()
+
+        # Mark received messages as read
+        supabase.table("messages").update({"read": True}).eq("chat_id", chat_id).neq("sender_id", profile_id).eq("read", False).execute()
+
+        return {"messages": messages_resp.data or [], "count": len(messages_resp.data or [])}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching messages: {str(e)}")
+
+
+@app.post("/chat/{chat_id}/messages")
+async def send_message(chat_id: str, body: dict):
+    """Send a message in a chat."""
+    try:
+        sender_id = body.get('sender_id')
+        content = (body.get('content') or '').strip()
+
+        if not sender_id or not content:
+            raise HTTPException(status_code=400, detail="sender_id and content required")
+
+        chat_resp = supabase.table("chats").select("participant1_id, participant2_id").eq("id", chat_id).execute()
+        if not chat_resp.data:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        chat = chat_resp.data[0]
+        if sender_id not in [chat['participant1_id'], chat['participant2_id']]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        msg_resp = supabase.table("messages").insert({
+            "chat_id": chat_id,
+            "sender_id": sender_id,
+            "content": content,
+            "read": False,
+        }).execute()
+
+        if not msg_resp.data:
+            raise HTTPException(status_code=500, detail="Failed to send message")
+
+        from datetime import datetime, timezone
+        supabase.table("chats").update({"last_message_at": datetime.now(timezone.utc).isoformat()}).eq("id", chat_id).execute()
+
+        return {"success": True, "message": msg_resp.data[0]}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error sending message: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

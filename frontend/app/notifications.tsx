@@ -86,8 +86,26 @@ export default function NotificationsScreen() {
         );
       }
 
-      // Navigate to project detail
-      if (notification.project_id) {
+      // Route based on notification type
+      if (notification.notification_type === 'interest') {
+        // Owner reviews the join request
+        router.push({
+          pathname: '/request-review',
+          params: { notificationId: notification.id },
+        });
+      } else if (notification.notification_type === 'approved' && notification.reference_id) {
+        // Requester opens their approved chat
+        router.push({
+          pathname: '/chat',
+          params: {
+            chatId: notification.reference_id,
+            projectTitle: notification.project_title || '',
+            otherName: `${notification.sender_first_name || ''} ${notification.sender_last_name || ''}`.trim(),
+            otherProfilePic: notification.sender_profile_picture_url || '',
+          },
+        });
+      } else if (notification.project_id) {
+        // denied or generic → show project detail
         const result = await getProject(notification.project_id);
         if (result.data) {
           router.push({
@@ -153,18 +171,28 @@ export default function NotificationsScreen() {
         {/* Content */}
         <View style={styles.notificationContent}>
           <Text style={styles.notificationTitle}>
-            {notification.notification_type === 'interest' ? '💡 Project Interest' : '📩 Notification'}
+            {notification.notification_type === 'interest'
+              ? '💡 Project Interest'
+              : notification.notification_type === 'approved'
+              ? '✅ Request Approved'
+              : notification.notification_type === 'denied'
+              ? '❌ Request Declined'
+              : '📩 Notification'}
           </Text>
           <Text style={styles.notificationMessage}>
             <Text style={styles.senderName}>
               {notification.sender_first_name} {notification.sender_last_name}
             </Text>
-            {notification.notification_type === 'interest' 
+            {notification.notification_type === 'interest'
               ? ` is interested in your project "${notification.project_title}"`
-              : ` sent you a message`
+              : notification.notification_type === 'approved'
+              ? ` approved your request to join "${notification.project_title}"`
+              : notification.notification_type === 'denied'
+              ? ` declined your request to join "${notification.project_title}"`
+              : notification.message || ' sent you a notification'
             }
           </Text>
-          {notification.message && (
+          {!!notification.message && (
             <Text style={styles.customMessage}>"{notification.message}"</Text>
           )}
           <Text style={styles.timeStamp}>{timeAgo}</Text>
