@@ -63,7 +63,7 @@ Return ONLY valid JSON, no markdown formatting or explanations.
 """
         
         # Use Gemini to generate the roadmap
-        # Using gemini-1.5-flash-latest - cheapest and fastest model
+        # Using gemini-1.5-pro - reliable production model
         model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(prompt)
         
@@ -130,10 +130,10 @@ async def generate_embedding(text: str) -> List[float]:
             return [0.0] * 768
         
         # Use Gemini's embedding model
+        # embedding-001 (768 dimensions) - supports retrieval_document task type
         result = genai.embed_content(
             model="models/text-embedding-004",
-            content=text,
-            task_type="semantic_similarity"
+            content=text
         )
         
         embedding = result['embedding']

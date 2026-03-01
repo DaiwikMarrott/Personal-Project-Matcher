@@ -90,7 +90,7 @@ class ProfileResponse(BaseModel):
 
 
 class ProjectCreate(BaseModel):
-    owner_id: str
+    owner_id: str  # Can be either profile.id or auth_user_id (will be looked up)
     title: str
     description: str
     tags: Optional[List[str]] = []
@@ -276,21 +276,45 @@ async def create_profile(profile: ProfileCreate):
 async def create_project(project: ProjectCreate):
     """
     Create a new project with AI-generated roadmap and embedding for semantic matching.
+    owner_id can be either the profile.id or auth_user_id (will be looked up automatically).
     """
     try:
+        logger.info(f"Creating project for owner_id: {project.owner_id}")
+        
+        # First, try to look up the profile by owner_id (could be profile.id or auth_user_id)
+        profile_response = supabase.table("profiles").select("id").eq("id", project.owner_id).execute()
+        
+        if not profile_response.data or len(profile_response.data) == 0:
+            # If not found by profile.id, try looking up by auth_user_id
+            logger.info(f"Profile not found by id, trying auth_user_id lookup")
+            profile_response = supabase.table("profiles").select("id").eq("auth_user_id", project.owner_id).execute()
+        
+        if not profile_response.data or len(profile_response.data) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Profile not found for owner_id: {project.owner_id}. Please create your profile first at /profile endpoint."
+            )
+        
+        actual_profile_id = profile_response.data[0]['id']
+        logger.info(f"Resolved profile.id: {actual_profile_id}")
+        
         # Generate project roadmap using Gemini
+        logger.info("Generating AI roadmap...")
         roadmap = await generate_project_roadmap(project.title, project.description)
         
         # Generate embedding for semantic matching
+        logger.info("Generating embeddings...")
         project_text = f"{project.title} {project.description} {' '.join(project.tags or [])}".strip()
         project_embedding = await generate_embedding(project_text)
         
-        # Insert into Supabase
+        # Insert into Supabase with the actual profile.id
         data = project.dict()
+        data['owner_id'] = actual_profile_id  # Use the resolved profile.id
         data['roadmap'] = roadmap
         data['project_embedding'] = project_embedding
         data['status'] = 'open'
         
+        logger.info("Inserting project into database...")
         response = supabase.table("projects").insert(data).execute()
         
         if not response.data:
@@ -299,9 +323,13 @@ async def create_project(project: ProjectCreate):
                 detail="Failed to create project"
             )
         
+        logger.info(f"Project created successfully with id: {response.data[0]['id']}")
         return response.data[0]
     
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Error creating project: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating project: {str(e)}"
