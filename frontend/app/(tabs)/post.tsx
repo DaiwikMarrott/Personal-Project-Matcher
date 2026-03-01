@@ -134,23 +134,8 @@ export default function PostProjectScreen() {
         setImageUri(null);
         setLoading(false);
         
-        // Show success message and navigate
-        Alert.alert(
-          '🎉 Success!', 
-          'Your project has been posted successfully. Check out the Explore tab to see it!',
-          [
-            {
-              text: 'View in Explore',
-              onPress: () => {
-                router.push('/(tabs)/explore');
-              },
-            },
-            {
-              text: 'Post Another',
-              style: 'cancel',
-            },
-          ]
-        );
+        // Automatically navigate to dashboard (Home tab)
+        router.push('/(tabs)/');
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to create project');
