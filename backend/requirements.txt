@@ -10,6 +10,9 @@ supabase
 # Google Gemini AI
 google-generativeai
 
+# ElevenLabs Voice (pinned to v0.2.27 for eleven_multilingual_v2 support)
+elevenlabs==0.2.27
+
 # Additional utilities
 python-multipart
 
