@@ -234,16 +234,16 @@ async def generate_hyde_voice(script_text: str) -> bytes:
         print("[Hyde Voice] ElevenLabs client configured")
         
         # Generate voice using ElevenLabs
-        # Voice ID: Adam - deep, authoritative voice
+        # Voice ID: Adam - deep, authoritative voice with evil undertone
         print("[Hyde Voice] Calling ElevenLabs API...")
         audio_generator = elevenlabs_client.text_to_speech.convert(
-            voice_id="pNInz6obpgDQGcFmaJgB",  # Adam
+            voice_id="pNInz6obpgDQGcFmaJgB",  # Adam - deep voice
             text=script_text,
-            model_id="eleven_turbo_v2_5",  # Updated model for free tier
+            model_id="eleven_turbo_v2_5",  # Turbo model for faster speech
             voice_settings=VoiceSettings(
-                stability=0.5,  # More variation for expressiveness
-                similarity_boost=0.75,
-                style=0.8,  # More stylized
+                stability=0.35,  # Lower for more dramatic, menacing variation
+                similarity_boost=0.85,  # Higher to maintain voice character
+                style=1.0,  # Maximum expressiveness for evil tone
                 use_speaker_boost=True
             )
         )
