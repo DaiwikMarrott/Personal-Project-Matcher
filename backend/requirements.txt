@@ -1,0 +1,14 @@
+# FastAPI Core
+fastapi
+uvicorn[standard]
+python-dotenv
+pydantic[email]
+
+# Supabase
+supabase
+
+# Google Gemini AI
+google-generativeai
+
+# Additional utilities
+python-multipart
