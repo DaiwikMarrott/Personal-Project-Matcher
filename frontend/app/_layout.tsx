@@ -16,8 +16,13 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="landing" />
+          <Stack.Screen name="signin" />
+          <Stack.Screen name="signup" />
+          <Stack.Screen name="signup-step2" />
+          <Stack.Screen name="(tabs)" />
           <Stack.Screen name="create-profile" options={{ headerShown: true, title: 'Create Profile', headerBackVisible: false }} />
           <Stack.Screen name="profile" options={{ headerShown: true, title: 'Profile' }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
