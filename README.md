@@ -37,9 +37,26 @@ Profiles Table: Stores academic background, social links (GitHub/LinkedIn/Discor
 
 Projects Table: Stores descriptions, tags, the AI-generated "Architect Roadmaps.", and AI-generated "Match Scores" based on user who is trying to apply to be in the project.
 
-Starting the app:
+📚 Documentation
+- **[SETUP.md](SETUP.md)**: Detailed setup instructions
+- **[ARCHIVE.md](ARCHIVE.md)**: Matching algorithm details, troubleshooting, and archived technical information
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Contribution guidelines
+- **[SECURITY.md](SECURITY.md)**: Security policy
 
-Open 2 terminals seperagtely:
+🚀 Starting the app:
+
+**Option 1: Quick Start (Recommended)**
+```bash
+# On Mac/Linux
+./start.sh
+
+# On Windows
+start.bat
+```
+
+**Option 2: Manual Start**
+
+Open 2 terminals separately:
 One is the frontend:
   - cd frontend
   - npm install
