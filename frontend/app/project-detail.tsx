@@ -17,7 +17,8 @@ import { useState, useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAuth } from '@/contexts/AuthContext';
-import { updateProject, deleteProject } from '@/services/api';
+import { updateProject, deleteProject, updateProjectStatus, uploadProjectImage, expressInterest } from '@/services/api';
+import * as ImagePicker from 'expo-image-picker';
 
 interface ProjectData {
   id: string;
@@ -45,6 +46,10 @@ export default function ProjectDetailScreen() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedDescription, setEditedDescription] = useState('');
   const [isOwner, setIsOwner] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [newImageUri, setNewImageUri] = useState<string | null>(null);
+  const [expressedInterest, setExpressedInterest] = useState(false);
+  const [expressingInterest, setExpressingInterest] = useState(false);
 
   useEffect(() => {
     loadProjectData();
@@ -94,23 +99,83 @@ export default function ProjectDetailScreen() {
     }
   };
 
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please grant camera roll permissions');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setNewImageUri(result.assets[0].uri);
+    }
+  };
+
   const handleSaveDescription = async () => {
     if (!project) return;
     
     try {
-      const result = await updateProject(project.id, {
+      // Upload new image if selected
+      let projectImageUrl = project.project_image_url;
+      if (newImageUri) {
+        console.log('[ProjectDetail] Uploading new image...');
+        const response = await fetch(newImageUri);
+        const blob = await response.blob();
+        console.log('[ProjectDetail] Blob created, size:', blob.size);
+        
+        const uploadResult = await uploadProjectImage(project.owner_id, blob);
+        console.log('[ProjectDetail] Upload result:', uploadResult);
+        
+        if (uploadResult.data) {
+          projectImageUrl = uploadResult.data.url;
+          console.log('[ProjectDetail] New image URL:', projectImageUrl);
+        } else {
+          console.error('[ProjectDetail] Image upload failed:', uploadResult.error);
+          Alert.alert('Warning', 'Failed to upload new image. Other changes will still be saved.');
+        }
+      }
+
+      const updateData: any = {
         owner_id: project.owner_id,  // Required for ownership verification
         description: editedDescription,
-      });
+      };
+
+      // Only include image URL if we have a new one
+      if (newImageUri && projectImageUrl) {
+        updateData.project_image_url = projectImageUrl;
+        console.log('[ProjectDetail] Including new image URL in update');
+      }
+
+      console.log('[ProjectDetail] Updating project with data:', updateData);
+      const result = await updateProject(project.id, updateData);
+      console.log('[ProjectDetail] Update result:', result);
       
       if (result.error) {
+        console.error('[ProjectDetail] Update failed:', result.error);
         Alert.alert('Error', result.error);
       } else {
-        setProject({ ...project, description: editedDescription });
+        // Use the backend response data which includes the updated image URL
+        if (result.data) {
+          console.log('[ProjectDetail] Setting project from backend data:', result.data);
+          setProject(result.data as ProjectData);
+        } else {
+          console.log('[ProjectDetail] No data in result, using manual update');
+          // Fallback to manual update if no data returned
+          setProject({ ...project, description: editedDescription, project_image_url: projectImageUrl });
+        }
         setIsEditing(false);
+        setNewImageUri(null);
         Alert.alert('Success', 'Project updated successfully');
       }
     } catch (error: any) {
+      console.error('[ProjectDetail] Save error:', error);
       Alert.alert('Error', error.message || 'Failed to update project');
     }
   };
@@ -144,6 +209,95 @@ export default function ProjectDetailScreen() {
         }
       ]
     );
+  };
+
+  const handleToggleStatus = async () => {
+    if (!project) return;
+    
+    const newStatus = project.status === 'open' ? 'closed' : 'open';
+    const statusLabel = newStatus === 'open' ? 'Open' : 'Closed';
+    
+    console.log('[ProjectDetail] Toggle status - current:', project.status, '-> new:', newStatus);
+    
+    Alert.alert(
+      `${statusLabel} Project`,
+      `Are you sure you want to mark this project as ${statusLabel.toLowerCase()}?${newStatus === 'closed' ? ' It will be hidden from discovery.' : ' It will be visible to others.'}`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            setStatusUpdating(true);
+            try {
+              console.log('[ProjectDetail] Calling updateProjectStatus API...');
+              const result = await updateProjectStatus(project.id, newStatus, project.owner_id);
+              
+              console.log('[ProjectDetail] API result:', result);
+              
+              if (result.error) {
+                console.error('[ProjectDetail] Status update failed:', result.error);
+                Alert.alert('Error', result.error);
+              } else {
+                console.log('[ProjectDetail] Status updated successfully, updating local state');
+                // Use backend response data if available
+                if (result.data) {
+                  setProject(result.data as ProjectData);
+                } else {
+                  setProject({ ...project, status: newStatus });
+                }
+                Alert.alert('Success', `Project marked as ${statusLabel.toLowerCase()}`);
+              }
+            } catch (error: any) {
+              console.error('[ProjectDetail] Status update error:', error);
+              Alert.alert('Error', error.message || 'Failed to update project status');
+            } finally {
+              setStatusUpdating(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleExpressInterest = async () => {
+    if (!project || !user || expressingInterest || expressedInterest) return;
+    
+    console.log('[ProjectDetail] Express interest button pressed');
+    setExpressingInterest(true);
+    
+    try {
+      // Get current user's profile ID
+      const { exists, profile } = await checkProfileExists(user.id);
+      if (!exists || !profile) {
+        Alert.alert('Error', 'Profile not found. Please restart the app.');
+        return;
+      }
+      
+      console.log('[ProjectDetail] Profile found, sending interest to:', project.owner_id);
+      
+      const result = await expressInterest(project.id, profile.id, '');
+      
+      console.log('[ProjectDetail] Express interest result:', result);
+      
+      if (result.error) {
+        console.error('[ProjectDetail] Express interest error:', result.error);
+        if (result.error.includes('already expressed interest')) {
+          setExpressedInterest(true);
+          Alert.alert('Already Sent', 'You have already expressed interest in this project.');
+        } else {
+          Alert.alert('Error', result.error);
+        }
+      } else {
+        console.log('[ProjectDetail] Express interest success');
+        setExpressedInterest(true);
+        Alert.alert('Interest Sent! 🎉', 'The project owner has been notified and can view your profile.');
+      }
+    } catch (error: any) {
+      console.error('[ProjectDetail] Express interest catch error:', error);
+      Alert.alert('Error', error.message || 'Failed to express interest');
+    } finally {
+      setExpressingInterest(false);
+    }
   };
 
   if (loading) {
@@ -184,22 +338,49 @@ export default function ProjectDetailScreen() {
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         {/* Hero Image */}
-        {project.project_image_url ? (
+        {newImageUri || project.project_image_url ? (
           <View style={styles.heroImageContainer}>
             <Image
-              source={{ uri: project.project_image_url }}
+              source={{ uri: newImageUri || project.project_image_url }}
               style={styles.heroImage}
             />
+            {isEditing && isOwner && (
+              <TouchableOpacity
+                style={styles.changeImageButton}
+                onPress={pickImage}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.changeImageText}>📷 Change Image</Text>
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           <View style={styles.heroPlaceholderContainer}>
             <Text style={styles.heroPlaceholderText}>📁</Text>
+            {isEditing && isOwner && (
+              <TouchableOpacity
+                style={styles.addImageButton}
+                onPress={pickImage}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.addImageText}>📷 Add Image</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
         {/* Title Section */}
         <View style={styles.titleCard}>
-          <Text style={styles.title}>{project.title}</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>{project.title}</Text>
+            {project.status && (
+              <View style={[styles.statusBadge, project.status === 'closed' ? styles.statusBadgeClosed : styles.statusBadgeOpen]}>
+                <Text style={styles.statusBadgeText}>
+                  {project.status === 'open' ? '🟢 Open' : '🔴 Closed'}
+                </Text>
+              </View>
+            )}
+          </View>
           {(project.owner_first_name || project.owner_last_name) && (
             <Text style={styles.owner}>
               Created by {project.owner_first_name || ''} {project.owner_last_name || ''}
@@ -233,18 +414,32 @@ export default function ProjectDetailScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Description</Text>
             {isOwner && (
-              <TouchableOpacity
-                style={styles.editIconButton}
-                onPress={() => {
-                  if (isEditing) {
-                    handleSaveDescription();
-                  } else {
-                    setIsEditing(true);
-                  }
-                }}
-              >
-                <Text style={styles.editIconText}>{isEditing ? '💾 Save' : '✏️ Edit'}</Text>
-              </TouchableOpacity>
+              <View style={styles.editButtonContainer}>
+                {isEditing && (
+                  <TouchableOpacity
+                    style={[styles.editIconButton, styles.cancelButton]}
+                    onPress={() => {
+                      setIsEditing(false);
+                      setEditedDescription(project.description || '');
+                      setNewImageUri(null);
+                    }}
+                  >
+                    <Text style={styles.editIconText}>❌ Cancel</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.editIconButton}
+                  onPress={() => {
+                    if (isEditing) {
+                      handleSaveDescription();
+                    } else {
+                      setIsEditing(true);
+                    }
+                  }}
+                >
+                  <Text style={styles.editIconText}>{isEditing ? '💾 Save' : '✏️ Edit'}</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
           {isEditing ? (
@@ -423,16 +618,35 @@ export default function ProjectDetailScreen() {
 
         {/* Action Buttons */}
         {isOwner ? (
-          <TouchableOpacity 
-            style={styles.deleteButton} 
-            activeOpacity={0.8}
-            onPress={handleDeleteProject}
-          >
-            <Text style={styles.deleteButtonText}>🗑️ Delete Project</Text>
-          </TouchableOpacity>
+          <View style={styles.ownerActions}>
+            <TouchableOpacity 
+              style={[styles.statusButton, statusUpdating && styles.buttonDisabled]} 
+              activeOpacity={0.8}
+              onPress={handleToggleStatus}
+              disabled={statusUpdating}
+            >
+              <Text style={styles.statusButtonText}>
+                {statusUpdating ? '⏳ Updating...' : (project.status === 'open' ? '🔒 Close Project' : '🔓 Reopen Project')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.deleteButton} 
+              activeOpacity={0.8}
+              onPress={handleDeleteProject}
+            >
+              <Text style={styles.deleteButtonText}>🗑️ Delete Project</Text>
+            </TouchableOpacity>
+          </View>
         ) : (
-          <TouchableOpacity style={styles.actionButton} activeOpacity={0.8}>
-            <Text style={styles.actionButtonText}>Express Interest</Text>
+          <TouchableOpacity 
+            style={[styles.actionButton, (expressedInterest || expressingInterest) && styles.buttonDisabled]} 
+            activeOpacity={0.8}
+            onPress={handleExpressInterest}
+            disabled={expressedInterest || expressingInterest}
+          >
+            <Text style={styles.actionButtonText}>
+              {expressingInterest ? '⏳ Sending...' : (expressedInterest ? '✓ Interest Sent' : '💌 Express Interest')}
+            </Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -510,6 +724,27 @@ const styles = StyleSheet.create({
     height: '100%',
     resizeMode: 'cover',
   },
+  changeImageButton: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    backgroundColor: '#10B981',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  changeImageText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   heroPlaceholderContainer: {
     width: '100%',
     height: 280,
@@ -520,6 +755,25 @@ const styles = StyleSheet.create({
   heroPlaceholderText: {
     fontSize: 120,
     opacity: 0.3,
+  },
+  addImageButton: {
+    position: 'absolute',
+    backgroundColor: '#10B981',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  addImageText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
   },
   titleCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
@@ -536,12 +790,38 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   title: {
     fontSize: 32,
     fontWeight: '900',
     color: '#065f46',
-    marginBottom: 12,
     letterSpacing: -1,
+    flex: 1,
+    marginRight: 12,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 2,
+  },
+  statusBadgeOpen: {
+    backgroundColor: '#d1fae5',
+    borderColor: '#6ee7b7',
+  },
+  statusBadgeClosed: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#fca5a5',
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#065f46',
   },
   owner: {
     fontSize: 14,
@@ -578,6 +858,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  editButtonContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   editIconButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -585,6 +869,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#6ee7b7',
+  },
+  cancelButton: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#fca5a5',
   },
   editIconText: {
     fontSize: 14,
@@ -647,13 +935,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#44403c',
-  },
-  statusBadge: {
-    backgroundColor: '#d1fae5',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    overflow: 'hidden',
   },
   roadmapCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.6)',
@@ -757,6 +1038,27 @@ const styles = StyleSheet.create({
     color: '#44403c',
     lineHeight: 20,
   },
+  ownerActions: {
+    marginTop: 20,
+    gap: 12,
+  },
+  statusButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 18,
+    borderRadius: 24,
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#059669',
+  },
+  statusButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
   actionButton: {
     backgroundColor: '#10B981',
     paddingVertical: 20,
@@ -774,10 +1076,9 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     backgroundColor: '#dc2626',
-    paddingVertical: 20,
+    paddingVertical: 18,
     borderRadius: 24,
     alignItems: 'center',
-    marginTop: 20,
     borderWidth: 3,
     borderColor: '#991b1b',
   },

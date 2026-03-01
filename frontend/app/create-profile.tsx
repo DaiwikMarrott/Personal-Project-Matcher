@@ -15,43 +15,15 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth, supabase } from '../contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 import Colors from '@/constants/colors';
-
-const API_URL = Platform.OS === 'web' 
-  ? 'http://localhost:8000' 
-  : Platform.OS === 'android' 
-    ? 'http://10.0.2.2:8000' 
-    : 'http://localhost:8000';
-
-const EXPERIENCE_LEVELS = ['beginner', 'intermediate', 'advanced', 'expert'];
-
-const PROJECT_SIZES = ['small', 'medium', 'large'];
-const PROJECT_DURATIONS = ['short', 'medium', 'long'];
-const COLLABORATION_STYLES = [
-  'Remote - Async',
-  'Remote - Synchronous',
-  'In-Person',
-  'Hybrid',
-  'Flexible',
-];
-
-const MAJORS = [
-  'Computer Science',
-  'Software Engineering',
-  'Data Science',
-  'Biology',
-  'Chemistry',
-  'Physics',
-  'Mathematics',
-  'Engineering',
-  'Design',
-  'Business',
-  'Other',
-];
+import { API_BASE_URL } from '@/services/api';
+import { EXPERIENCE_LEVELS, MAJORS, PROJECT_SIZES, PROJECT_DURATIONS, COLLABORATION_STYLES } from '@/constants/app-constants';
 
 export default function CreateProfile() {
   const router = useRouter();
@@ -95,6 +67,13 @@ export default function CreateProfile() {
     })();
   }, []);
 
+  // Debug: Log when page loads
+  React.useEffect(() => {
+    console.log('[create-profile] Page loaded');
+    console.log('[create-profile] Current user:', user ? user.id : 'NO USER');
+    console.log('[create-profile] User email:', user ? user.email : 'NO EMAIL');
+  }, [user]);
+
   const pickImage = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -133,7 +112,7 @@ export default function CreateProfile() {
         const formData = new FormData();
         formData.append('file', file);
 
-        const uploadResponse = await fetch(`${API_URL}/upload-avatar/${user.id}`, {
+        const uploadResponse = await fetch(`${API_BASE_URL}/upload-avatar/${user.id}`, {
           method: 'POST',
           body: formData,
         });
@@ -153,7 +132,7 @@ export default function CreateProfile() {
           name: 'avatar.jpg',
         } as any);
 
-        const uploadResponse = await fetch(`${API_URL}/upload-avatar/${user.id}`, {
+        const uploadResponse = await fetch(`${API_BASE_URL}/upload-avatar/${user.id}`, {
           method: 'POST',
           body: formData,
         });
@@ -184,6 +163,8 @@ export default function CreateProfile() {
       return;
     }
 
+    console.log('[create-profile] Starting profile creation for user ID:', user.id);
+    console.log('[create-profile] User email:', user.email);
     setLoading(true);
 
     try {
@@ -223,7 +204,7 @@ export default function CreateProfile() {
         collaboration_style: collaborationStyle || null,
       };
 
-      const response = await fetch(`${API_URL}/profile`, {
+      const response = await fetch(`${API_BASE_URL}/profile`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -231,32 +212,76 @@ export default function CreateProfile() {
         body: JSON.stringify(profileData),
       });
 
+      console.log('Profile creation response status:', response.status);
+
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('Profile creation error:', errorData);
         throw new Error(errorData.detail || 'Failed to create profile');
       }
 
       const createdProfile = await response.json();
-      console.log('Profile created:', createdProfile);
+      console.log('Profile created successfully:', createdProfile);
 
-      Alert.alert('Success!', 'Your profile has been created. Welcome to Project Jekyll & Hyde!', [
-        { text: 'OK', onPress: () => router.replace('/') }
-      ]);
+      // Small delay to ensure backend has fully processed
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      Alert.alert(
+        'Success!', 
+        'Your profile has been created. Welcome to Project Jekyll & Hyde!', 
+        [
+          { 
+            text: 'OK', 
+            onPress: () => {
+              console.log('Redirecting to main app...');
+              router.replace('/(tabs)');
+            }
+          }
+        ]
+      );
 
     } catch (error: any) {
       console.error('Error creating profile:', error);
-      Alert.alert('Error', error.message || 'Failed to create profile. Please try again.');
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+      });
+      Alert.alert(
+        'Error', 
+        error.message || 'Failed to create profile. Please try again.',
+        [
+          {
+            text: 'OK',
+            onPress: () => console.log('User acknowledged error')
+          }
+        ]
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Create Your Profile</Text>
-        <Text style={styles.subtitle}>Tell us about yourself!</Text>
+    <>
+      <StatusBar barStyle="light-content" />
+      {/* Green Header Bar */}
+      <View style={styles.headerBar}>
+        <View style={styles.headerPlaceholder} />
+        <Text style={styles.headerTitle}>Create Profile</Text>
+        <View style={styles.headerPlaceholder} />
       </View>
+
+      <View style={styles.container}>
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Centered Card */}
+          <View style={styles.card}>
+            <View style={styles.header}>
+              <Text style={styles.title}>Create Your Profile</Text>
+              <Text style={styles.subtitle}>Tell us about yourself!</Text>
+            </View>
 
       {/* Profile Picture */}
       <View style={styles.imageSection}>
@@ -514,45 +539,84 @@ export default function CreateProfile() {
       <View style={styles.footer}>
         <Text style={styles.footerText}>* Required fields</Text>
       </View>
-    </ScrollView>
+          </View>
+        </ScrollView>
+      </View>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#10B981',
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    paddingBottom: 15,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  headerPlaceholder: {
+    width: 40,
+  },
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#e6f7ed',
   },
-  contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: 24,
+    paddingVertical: 40,
+  },
+  card: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 32,
+    padding: 32,
+    maxWidth: 600,
+    width: '100%',
+    alignSelf: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 10,
   },
   header: {
-    marginBottom: 32,
+    marginBottom: 24,
     alignItems: 'center',
-    marginTop: 8,
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: Colors.text.primary,
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#065f46',
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
-    color: Colors.text.secondary,
+    fontSize: 15,
+    color: '#78716c',
+    fontWeight: '500',
   },
   imageSection: {
     alignItems: 'center',
-    marginBottom: 32,
-    backgroundColor: Colors.surface,
-    padding: 24,
+    marginBottom: 24,
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    padding: 20,
     borderRadius: 20,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
   imageContainer: {
     marginBottom: 12,
@@ -562,17 +626,17 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 60,
     borderWidth: 4,
-    borderColor: Colors.primary,
+    borderColor: '#10B981',
   },
   placeholderImage: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: Colors.accentLight,
+    backgroundColor: '#d1fae5',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: Colors.primary,
+    borderColor: '#6ee7b7',
     borderStyle: 'dashed',
   },
   placeholderText: {
@@ -580,110 +644,110 @@ const styles = StyleSheet.create({
   },
   placeholderSubtext: {
     fontSize: 14,
-    color: Colors.primaryDark,
+    color: '#065f46',
     marginTop: 6,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   imageHint: {
     fontSize: 13,
-    color: Colors.text.tertiary,
+    color: '#78716c',
     textAlign: 'center',
     marginTop: 4,
   },
   section: {
-    marginBottom: 28,
+    marginBottom: 24,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: Colors.text.primary,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#065f46',
     marginBottom: 16,
   },
   sectionSubtitle: {
     fontSize: 14,
-    color: Colors.text.secondary,
+    color: '#78716c',
     marginBottom: 12,
     marginTop: -8,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: Colors.text.secondary,
+    color: '#44403c',
     marginBottom: 8,
     marginTop: 14,
   },
   input: {
-    backgroundColor: Colors.surface,
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: Colors.border.light,
+    borderColor: '#e7e5e4',
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
-    color: Colors.text.primary,
+    color: '#1c1917',
   },
   textArea: {
     minHeight: 100,
     textAlignVertical: 'top',
   },
   pickerButton: {
-    backgroundColor: Colors.surface,
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: Colors.border.light,
+    borderColor: '#e7e5e4',
     borderRadius: 12,
     padding: 14,
   },
   pickerText: {
     fontSize: 16,
-    color: Colors.text.primary,
+    color: '#1c1917',
   },
   pickerPlaceholder: {
     fontSize: 16,
-    color: Colors.text.tertiary,
+    color: '#a8a29e',
   },
   pickerContainer: {
-    backgroundColor: Colors.surface,
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: Colors.border.light,
+    borderColor: '#e7e5e4',
     borderRadius: 12,
     marginTop: 8,
     maxHeight: 200,
-    position: 'relative',
-    zIndex: 1000,
-    shadowColor: Colors.shadow,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
+    shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 5,
   },
   pickerItem: {
     padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
+    borderBottomColor: '#f5f5f4',
   },
   pickerItemText: {
     fontSize: 16,
-    color: Colors.text.primary,
+    color: '#1c1917',
   },
   submitButton: {
-    backgroundColor: Colors.accent,
+    backgroundColor: '#10B981',
     padding: 18,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
     marginTop: 24,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   submitButtonDisabled: {
-    backgroundColor: Colors.text.tertiary,
-    opacity: 0.6,
+    backgroundColor: '#d1d5db',
+    shadowOpacity: 0.1,
   },
   submitButtonText: {
-    color: Colors.text.inverse,
+    color: '#fff',
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   footer: {
     marginTop: 24,
@@ -691,6 +755,6 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 13,
-    color: Colors.text.tertiary,
+    color: '#78716c',
   },
 });

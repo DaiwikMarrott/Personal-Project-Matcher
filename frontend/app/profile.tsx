@@ -20,28 +20,8 @@ import { useRouter } from 'expo-router';
 import { useAuth, supabase } from '../contexts/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import Colors from '@/constants/colors';
-
-const API_URL = Platform.OS === 'web' 
-  ? 'http://localhost:8000' 
-  : Platform.OS === 'android' 
-    ? 'http://10.0.2.2:8000' 
-    : 'http://localhost:8000';
-
-const EXPERIENCE_LEVELS = ['beginner', 'intermediate', 'advanced', 'expert'];
-
-const MAJORS = [
-  'Computer Science',
-  'Software Engineering',
-  'Data Science',
-  'Biology',
-  'Chemistry',
-  'Physics',
-  'Mathematics',
-  'Engineering',
-  'Design',
-  'Business',
-  'Other',
-];
+import { API_BASE_URL } from '@/services/api';
+import { EXPERIENCE_LEVELS, MAJORS } from '@/constants/app-constants';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -150,7 +130,7 @@ export default function ProfileScreen() {
         const formData = new FormData();
         formData.append('file', file);
 
-        const uploadResponse = await fetch(`${API_URL}/upload-avatar/${user.id}`, {
+        const uploadResponse = await fetch(`${API_BASE_URL}/upload-avatar/${user.id}`, {
           method: 'POST',
           body: formData,
         });
@@ -169,7 +149,7 @@ export default function ProfileScreen() {
           name: 'avatar.jpg',
         } as any);
 
-        const uploadResponse = await fetch(`${API_URL}/upload-avatar/${user.id}`, {
+        const uploadResponse = await fetch(`${API_BASE_URL}/upload-avatar/${user.id}`, {
           method: 'POST',
           body: formData,
         });

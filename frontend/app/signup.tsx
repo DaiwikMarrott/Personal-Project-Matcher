@@ -1,6 +1,6 @@
 /**
  * Sign Up Screen - Step 1
- * Basic account information
+ * Basic account information (with green header bar)
  */
 import { useState } from 'react';
 import {
@@ -18,6 +18,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function SignUp() {
   const router = useRouter();
@@ -39,7 +40,20 @@ export default function SignUp() {
   const handleNext = async () => {
     // Validate required fields
     if (!formData.firstName || !formData.lastName || !formData.email || !formData.password) {
-      Alert.alert('Error', 'Please fill in all required fields');
+      Alert.alert('Error', 'Please fill in all required fields (Name, Email, Password)');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
+    // Validate password length
+    if (formData.password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
       return;
     }
 
@@ -52,7 +66,19 @@ export default function SignUp() {
 
   return (
     <>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" />
+      {/* Green Header Bar */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Create Account</Text>
+        <View style={styles.backButton} />
+      </View>
+
       <View style={styles.container}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -60,15 +86,8 @@ export default function SignUp() {
         >
           <ScrollView contentContainerStyle={styles.scrollContent}>
             <View style={styles.card}>
-              <TouchableOpacity
-                onPress={() => router.back()}
-                style={styles.backButton}
-              >
-                <Text style={styles.backText}>← Back</Text>
-              </TouchableOpacity>
-
-              <Text style={styles.title}>Create Account</Text>
-              <Text style={styles.subtitle}>Let's get to know you better.</Text>
+              <Text style={styles.title}>Let's get started</Text>
+              <Text style={styles.subtitle}>Tell us about yourself.</Text>
 
               <View style={styles.row}>
                 <View style={[styles.inputContainer, styles.halfWidth]}>
@@ -211,6 +230,33 @@ export default function SignUp() {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#10B981',
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    paddingBottom: 15,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: '#e6f7ed',
@@ -221,7 +267,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     padding: 24,
-    paddingTop: 60,
+    paddingTop: 24,
   },
   card: {
     backgroundColor: 'rgba(255, 255, 255, 0.6)',
@@ -232,14 +278,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.5)',
-  },
-  backButton: {
-    marginBottom: 24,
-  },
-  backText: {
-    fontSize: 16,
-    color: '#78716c',
-    fontWeight: '600',
   },
   title: {
     fontSize: 36,

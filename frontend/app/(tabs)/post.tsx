@@ -18,7 +18,7 @@ import {
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import { createProject } from '@/services/api';
+import { createProject, uploadProjectImage } from '@/services/api';
 import * as ImagePicker from 'expo-image-picker';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
@@ -76,8 +76,9 @@ export default function PostProjectScreen() {
       // Get user profile
       const { exists, profile } = await checkProfileExists(user.id);
       if (!exists || !profile) {
-        Alert.alert('Error', 'Please create your profile first');
-        router.push('/create-profile');
+        console.log('[CreateProject] No profile found');
+        Alert.alert('Error', 'Profile not found. Please restart the app.');
+        setLoading(false);
         return;
       }
 
@@ -93,20 +94,19 @@ export default function PostProjectScreen() {
         try {
           const response = await fetch(imageUri);
           const blob = await response.blob();
-          const formData = new FormData();
-          formData.append('file', blob, 'project-image.jpg');
-
-          const uploadResponse = await fetch(`http://localhost:8000/upload-project-image/${profile.id}`, {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (uploadResponse.ok) {
-            const { url } = await uploadResponse.json();
-            projectImageUrl = url;
+          
+          const uploadResult = await uploadProjectImage(profile.id, blob);
+          
+          if (uploadResult.data) {
+            projectImageUrl = uploadResult.data.url;
+            console.log('Image uploaded successfully:', projectImageUrl);
+          } else {
+            console.error('Image upload failed:', uploadResult.error);
+            Alert.alert('Warning', 'Failed to upload image. Project will be created without image.');
           }
         } catch (error) {
-          console.error('Image upload failed:', error);
+          console.error('Image upload error:', error);
+          Alert.alert('Warning', 'Failed to upload image. Project will be created without image.');
         }
       }
 
@@ -164,21 +164,6 @@ export default function PostProjectScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Green Header Bar */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity
-          style={styles.headerBackButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <IconSymbol size={24} name="chevron.left" color="#fff" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/(tabs)')}>
-          <Text style={styles.headerTitle}>Post Project</Text>
-        </TouchableOpacity>
-        <View style={{ width: 44 }} />
-      </View>
-
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
@@ -293,27 +278,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#e6f7ed',
-  },
-  headerBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#10B981',
-  },
-  headerBackButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
   },
   scrollView: {
     flex: 1,
