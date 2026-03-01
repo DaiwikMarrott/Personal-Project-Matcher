@@ -36,3 +36,17 @@ Supabase: Handles our PostgreSQL database and Secure Authentication (Google/Emai
 Profiles Table: Stores academic background, social links (GitHub/LinkedIn/Discord), and availability.
 
 Projects Table: Stores descriptions, tags, the AI-generated "Architect Roadmaps.", and AI-generated "Match Scores" based on user who is trying to apply to be in the project.
+
+Starting the app:
+
+Open 2 terminals seperagtely:
+One is the frontend:
+  - cd frontend
+  - npm install
+  - npx expo start
+One is the backend:
+  - cd backend
+  - python3 -m venv venv
+  - source venv/bin/activate
+  - pip install -r requirements.txt
+  - uvicorn main:app --reload
