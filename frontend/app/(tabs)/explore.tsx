@@ -1,10 +1,18 @@
-import { StyleSheet, ScrollView, View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { StyleSheet, ScrollView, View, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { useState, useEffect } from 'react';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+// Use hardcoded URL for web, env variable for native
+const getApiUrl = () => {
+  if (Platform.OS === 'web') {
+    return 'http://localhost:8000';
+  }
+  return process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:8000'; // 10.0.2.2 for Android emulator
+};
+
+const API_URL = getApiUrl();
 
 interface Project {
   id: string;
@@ -20,26 +28,77 @@ export default function ExploreScreen() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [backendOnline, setBackendOnline] = useState(false);
 
   useEffect(() => {
-    fetchProjects();
+    checkBackendHealth();
   }, []);
+
+  const checkBackendHealth = async () => {
+    try {
+      console.log('Checking backend at:', API_URL);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+      
+      const response = await fetch(`${API_URL}/`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        setBackendOnline(true);
+        fetchProjects();
+      } else {
+        throw new Error('Backend returned error status');
+      }
+    } catch (err: any) {
+      console.error('Backend health check failed:', err);
+      setBackendOnline(false);
+      setLoading(false);
+      setError('Cannot connect to backend. Make sure it is running at ' + API_URL);
+    }
+  };
 
   const fetchProjects = async () => {
     try {
       setLoading(true);
       setError('');
-      const response = await fetch(`${API_URL}/projects?project_status=open&limit=50`);
+      
+      console.log('Fetching projects from:', `${API_URL}/projects`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch(`${API_URL}/projects?project_status=open&limit=50`, {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
-        throw new Error('Failed to fetch projects');
+        const errorText = await response.text();
+        throw new Error(`Server error: ${response.status} - ${errorText}`);
       }
       
       const data = await response.json();
+      console.log('Projects loaded:', data.count);
       setProjects(data.projects || []);
+      setBackendOnline(true);
     } catch (err: any) {
-      setError(err.message || 'Error loading projects');
       console.error('Error fetching projects:', err);
+      
+      if (err.name === 'AbortError') {
+        setError('Request timed out. Backend might be slow or not responding.');
+      } else if (err.message?.includes('Network request failed')) {
+        setError(`Cannot reach backend at ${API_URL}. Is it running?`);
+        setBackendOnline(false);
+      } else {
+        setError(err.message || 'Error loading projects');
+      }
     } finally {
       setLoading(false);
     }
@@ -96,17 +155,52 @@ export default function ExploreScreen() {
         {loading ? (
           <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color="#4CAF50" />
-            <ThemedText style={styles.loadingText}>Loading projects...</ThemedText>
+            <ThemedText style={styles.loadingText}>
+              {backendOnline ? 'Loading projects...' : 'Connecting to backend...'}
+            </ThemedText>
           </View>
         ) : error ? (
           <View style={styles.errorContainer}>
             <ThemedText style={styles.errorEmoji}>⚠️</ThemedText>
             <ThemedText style={styles.errorText}>{error}</ThemedText>
-            <TouchableOpacity style={styles.retryButton} onPress={fetchProjects}>
-              <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+            
+            {!backendOnline && (
+              <View style={styles.troubleshootContainer}>
+                <ThemedText style={styles.troubleshootTitle}>
+                  💡 Quick Fix:
+                </ThemedText>
+                <ThemedText style={styles.troubleshootText}>
+                  1. Open a terminal in the backend folder
+                </ThemedText>
+                <ThemedText style={styles.troubleshootText}>
+                  2. Run: uvicorn main:app --reload
+                </ThemedText>
+                <ThemedText style={styles.troubleshootText}>
+                  3. Wait for "Application startup complete"
+                </ThemedText>
+                <ThemedText style={styles.troubleshootText}>
+                  4. Click Retry below
+                </ThemedText>
+              </View>
+            )}
+            
+            <TouchableOpacity 
+              style={styles.retryButton} 
+              onPress={() => {
+                setError('');
+                checkBackendHealth();
+              }}
+            >
+              <ThemedText style={styles.retryButtonText}>
+                🔄 Retry Connection
+              </ThemedText>
             </TouchableOpacity>
+            
             <ThemedText style={styles.helpText}>
-              Make sure the backend is running at {API_URL}
+              Backend URL: {API_URL}
+            </ThemedText>
+            <ThemedText style={styles.helpText}>
+              Platform: {Platform.OS}
             </ThemedText>
           </View>
         ) : projects.length === 0 ? (
@@ -327,5 +421,26 @@ const styles = StyleSheet.create({
   matchButton: {
     color: '#4CAF50',
     fontWeight: '600',
+  },
+  troubleshootContainer: {
+    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 152, 0, 0.3)',
+  },
+  troubleshootTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+    color: '#FF9800',
+  },
+  troubleshootText: {
+    fontSize: 13,
+    marginBottom: 6,
+    opacity: 0.9,
+    paddingLeft: 8,
   },
 });
