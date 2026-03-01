@@ -1,0 +1,63 @@
+# Project Jekyll & Hyde - Gitignore
+
+# Environment Variables (IMPORTANT: Never commit .env files!)
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+**/.env
+**/.env.local
+
+# Dependencies
+node_modules/
+venv/
+env/
+ENV/
+__pycache__/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+.expo/
+web-build/
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.pytest_cache/
+.coverage
+
+# Temporary files
+*.tmp
+temp/
+tmp/
+
+# Compiled files
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
