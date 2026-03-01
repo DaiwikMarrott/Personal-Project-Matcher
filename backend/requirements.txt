@@ -12,3 +12,6 @@ google-generativeai
 
 # Additional utilities
 python-multipart
+
+# Development & Testing (install with: pip install -r requirements.txt -r requirements-dev.txt)
+# Or install in dev mode: pip install -e ".[dev]"
