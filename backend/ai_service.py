@@ -10,7 +10,7 @@ import json
 from typing import Dict, Any, List
 import os
 from dotenv import load_dotenv
-from elevenlabs import ElevenLabs, VoiceSettings
+from elevenlabs import generate, set_api_key
 import base64
 
 load_dotenv()
@@ -22,9 +22,9 @@ if GEMINI_API_KEY:
 
 # Configure ElevenLabs
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-elevenlabs_client = None
 if ELEVENLABS_API_KEY:
-    elevenlabs_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+    set_api_key(ELEVENLABS_API_KEY)
+elevenlabs_client = bool(ELEVENLABS_API_KEY)
 
 
 async def generate_project_roadmap(title: str, description: str) -> Dict[str, Any]:
@@ -236,31 +236,20 @@ async def generate_hyde_voice(script_text: str) -> bytes:
         
         print("[Hyde Voice] ElevenLabs client configured")
         
-        # Generate voice using ElevenLabs
-        # Voice ID: Adam - deep, authoritative voice with evil undertone
+        # Generate voice using ElevenLabs v0.2.x API
+        # Voice ID: Adam - deep, authoritative voice
         print("[Hyde Voice] Calling ElevenLabs API...")
-        audio_generator = elevenlabs_client.text_to_speech.convert(
-            voice_id="pNInz6obpgDQGcFmaJgB",  # Adam - deep voice
+        audio_bytes = generate(
             text=script_text,
-            model_id="eleven_turbo_v2_5",  # Turbo model for faster speech
-            voice_settings=VoiceSettings(
-                stability=0.35,  # Lower for more dramatic, menacing variation
-                similarity_boost=0.85,  # Higher to maintain voice character
-                style=1.0,  # Maximum expressiveness for evil tone
-                use_speaker_boost=True
-            )
+            voice="pNInz6obpgDQGcFmaJgB",  # Adam - deep voice
+            model="eleven_multilingual_v2",
         )
         
-        print("[Hyde Voice] Collecting audio chunks...")
-        # Collect audio chunks
-        audio_bytes = b""
-        chunk_count = 0
-        for chunk in audio_generator:
-            if isinstance(chunk, bytes):
-                audio_bytes += chunk
-                chunk_count += 1
+        # In v0.2.x, generate() may return bytes directly or a generator
+        if not isinstance(audio_bytes, bytes):
+            audio_bytes = b"".join(audio_bytes)
         
-        print(f"[Hyde Voice] Collected {chunk_count} chunks, total size: {len(audio_bytes)} bytes")
+        print(f"[Hyde Voice] Audio generated, size: {len(audio_bytes)} bytes")
         
         if len(audio_bytes) == 0:
             raise Exception("No audio data generated")

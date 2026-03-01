@@ -216,7 +216,10 @@ export default function NotificationsScreen() {
         >
           <IconSymbol size={24} name="chevron.left" color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notifications</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <IconSymbol size={22} name="bell.fill" color="#fff" />
+          <Text style={styles.headerTitle}>Notifications</Text>
+        </View>
         {unreadCount > 0 && (
           <TouchableOpacity
             style={styles.markAllButton}
