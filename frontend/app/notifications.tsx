@@ -100,6 +100,7 @@ export default function NotificationsScreen() {
           params: {
             chatId: notification.reference_id,
             projectTitle: notification.project_title || '',
+            projectId: notification.project_id || '',
             otherName: `${notification.sender_first_name || ''} ${notification.sender_last_name || ''}`.trim(),
             otherProfilePic: notification.sender_profile_picture_url || '',
           },
