@@ -115,6 +115,11 @@ class MatchRequest(BaseModel):
     match_limit: int = 10
 
 
+class ProjectStatusUpdate(BaseModel):
+    status: str
+    owner_id: str  # For verification
+
+
 # Health check
 @app.get("/")
 async def root():
@@ -438,6 +443,60 @@ async def get_project(project_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching project: {str(e)}"
+        )
+
+
+# Update project status (close/reopen)
+@app.patch("/project/{project_id}/status", response_model=ProjectResponse)
+async def update_project_status(project_id: str, status_update: ProjectStatusUpdate):
+    """Update project status (close/reopen) - only owner can update"""
+    try:
+        # Verify the project exists and check ownership
+        project_response = supabase.table("projects").select("*").eq("id", project_id).execute()
+        
+        if not project_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        
+        project = project_response.data[0]
+        
+        # Verify ownership
+        if project['owner_id'] != status_update.owner_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only the project owner can update the status"
+            )
+        
+        # Validate status
+        valid_statuses = ['open', 'in-progress', 'completed', 'closed']
+        if status_update.status not in valid_statuses:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+            )
+        
+        # Update the status
+        update_response = supabase.table("projects").update({
+            "status": status_update.status,
+            "updated_at": "NOW()"
+        }).eq("id", project_id).execute()
+        
+        if not update_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to update project status"
+            )
+        
+        return update_response.data[0]
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating project status: {str(e)}"
         )
 
 
