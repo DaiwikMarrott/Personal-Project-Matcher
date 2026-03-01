@@ -12,9 +12,10 @@ import {
   Linking,
   Image,
 } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { getProjects } from '@/services/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
@@ -24,10 +25,14 @@ export default function ProfileTabScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [userProjects, setUserProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showClosedProjects, setShowClosedProjects] = useState(false);
 
-  useEffect(() => {
-    loadProfileData();
-  }, [user]);
+  // Reload profile data when screen comes into focus (to reflect status changes)
+  useFocusEffect(
+    useCallback(() => {
+      loadProfileData();
+    }, [user])
+  );
 
   const loadProfileData = async () => {
     if (!user) {
@@ -40,7 +45,8 @@ export default function ProfileTabScreen() {
       const { exists, profile: userProfile } = await checkProfileExists(user.id);
       
       if (!exists || !userProfile) {
-        router.replace('/create-profile');
+        console.log('[ProfileTab] No profile found');
+        setLoading(false);
         return;
       }
 
@@ -82,11 +88,12 @@ export default function ProfileTabScreen() {
     return (
       <View style={styles.emptyContainer}>
         <Text style={styles.emptyText}>Profile not found</Text>
+        <Text style={styles.emptySubtext}>Please restart the app</Text>
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.push('/create-profile')}
+          onPress={handleLogout}
         >
-          <Text style={styles.buttonText}>Create Profile</Text>
+          <Text style={styles.buttonText}>Sign Out</Text>
         </TouchableOpacity>
       </View>
     );
@@ -96,21 +103,6 @@ export default function ProfileTabScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Green Header Bar */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity
-          style={styles.headerBackButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <IconSymbol size={24} name="chevron.left" color="#fff" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/(tabs)')}>
-          <Text style={styles.headerTitle}>Profile</Text>
-        </TouchableOpacity>
-        <View style={{ width: 44 }} />
-      </View>
-
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
 
       {/* Header Card */}
@@ -190,47 +182,112 @@ export default function ProfileTabScreen() {
 
       {/* Projects Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>My Projects ({userProjects.length})</Text>
-        {userProjects.length === 0 ? (
-          <Text style={styles.emptyText}>No projects yet</Text>
+        {/* Open Projects */}
+        <Text style={styles.sectionTitle}>
+          Open Projects ({userProjects.filter(p => p.status === 'open' || !p.status).length})
+        </Text>
+        {userProjects.filter(p => p.status === 'open' || !p.status).length === 0 ? (
+          <Text style={styles.emptyText}>No open projects yet</Text>
         ) : (
           <View style={styles.projectList}>
-            {userProjects.map((project) => (
-              <TouchableOpacity
-                key={project.id}
-                style={styles.projectCard}
-                activeOpacity={0.7}
-                onPress={() => {
-                  router.push({
-                    pathname: '/project-detail',
-                    params: { projectData: JSON.stringify(project) },
-                  });
-                }}
-              >
-                {/* Project Image */}
-                <View style={styles.projectImageContainer}>
-                  {project.project_image_url ? (
-                    <Image
-                      source={{ uri: project.project_image_url }}
-                      style={styles.projectImage}
-                    />
-                  ) : (
-                    <View style={styles.projectImagePlaceholder}>
-                      <Text style={styles.projectImagePlaceholderText}>📁</Text>
+            {userProjects
+              .filter(p => p.status === 'open' || !p.status)
+              .map((project) => (
+                <TouchableOpacity
+                  key={project.id}
+                  style={styles.projectCard}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    router.push({
+                      pathname: '/project-detail',
+                      params: { projectData: JSON.stringify(project) },
+                    });
+                  }}
+                >
+                  {/* Project Image */}
+                  <View style={styles.projectImageContainer}>
+                    {project.project_image_url ? (
+                      <Image
+                        source={{ uri: project.project_image_url }}
+                        style={styles.projectImage}
+                      />
+                    ) : (
+                      <View style={styles.projectImagePlaceholder}>
+                        <Text style={styles.projectImagePlaceholderText}>📁</Text>
+                      </View>
+                    )}
+                  </View>
+                  
+                  {/* Project Info */}
+                  <View style={styles.projectInfo}>
+                    <Text style={styles.projectTitle}>{project.title}</Text>
+                    <View style={styles.openBadge}>
+                      <Text style={styles.openBadgeText}>🟢 Open</Text>
                     </View>
-                  )}
-                </View>
-                
-                {/* Project Info */}
-                <View style={styles.projectInfo}>
-                  <Text style={styles.projectTitle}>{project.title}</Text>
-                  <Text style={styles.projectStatus}>{project.status || 'open'}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+                  </View>
+                </TouchableOpacity>
+              ))}
           </View>
         )}
       </View>
+
+      {/* Closed Projects Section (Collapsible) */}
+      {userProjects.filter(p => p.status === 'closed').length > 0 && (
+        <View style={styles.section}>
+          <TouchableOpacity 
+            style={styles.closedProjectsHeader}
+            onPress={() => setShowClosedProjects(!showClosedProjects)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.closedProjectsTitle}>
+              Closed Projects ({userProjects.filter(p => p.status === 'closed').length})
+            </Text>
+            <Text style={styles.toggleIcon}>{showClosedProjects ? '▼' : '►'}</Text>
+          </TouchableOpacity>
+          
+          {showClosedProjects && (
+            <View style={styles.projectList}>
+              {userProjects
+                .filter(p => p.status === 'closed')
+                .map((project) => (
+                  <TouchableOpacity
+                    key={project.id}
+                    style={[styles.projectCard, styles.closedProjectCard]}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      router.push({
+                        pathname: '/project-detail',
+                        params: { projectData: JSON.stringify(project) },
+                      });
+                    }}
+                  >
+                    {/* Project Image */}
+                    <View style={styles.projectImageContainer}>
+                      {project.project_image_url ? (
+                        <Image
+                          source={{ uri: project.project_image_url }}
+                          style={[styles.projectImage, styles.closedProjectImage]}
+                        />
+                      ) : (
+                        <View style={[styles.projectImagePlaceholder, styles.closedProjectImagePlaceholder]}>
+                          <Text style={styles.projectImagePlaceholderText}>📁</Text>
+                        </View>
+                      )}
+                    </View>
+                    
+                    {/* Project Info */}
+                    <View style={styles.projectInfo}>
+                      <Text style={styles.projectTitle}>{project.title}</Text>
+                      <View style={styles.closedBadge}>
+                        <Text style={styles.closedBadgeText}>🔴 Closed</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+            </View>
+          )}
+        </View>
+      )}
 
       {/* Logout Button */}
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
@@ -245,27 +302,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#e6f7ed',
-  },
-  headerBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#10B981',
-  },
-  headerBackButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
   },
   scrollView: {
     flex: 1,
@@ -448,15 +484,58 @@ const styles = StyleSheet.create({
     color: '#1c1917',
     flex: 1,
   },
-  projectStatus: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#78716c',
-    textTransform: 'capitalize',
-    backgroundColor: '#e7e5e4',
+  openBadge: {
+    backgroundColor: '#d1fae5',
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#6ee7b7',
+  },
+  openBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#065f46',
+  },
+  closedProjectsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  closedProjectsTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#78716c',
+  },
+  toggleIcon: {
+    fontSize: 16,
+    color: '#78716c',
+    fontWeight: '700',
+  },
+  closedProjectCard: {
+    opacity: 0.7,
+    borderColor: '#d6d3d1',
+  },
+  closedProjectImage: {
+    opacity: 0.6,
+  },
+  closedProjectImagePlaceholder: {
+    backgroundColor: '#e7e5e4',
+  },
+  closedBadge: {
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+  },
+  closedBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#991b1b',
   },
   button: {
     backgroundColor: '#10B981',
@@ -476,6 +555,13 @@ const styles = StyleSheet.create({
     color: '#78716c',
     fontWeight: '500',
     textAlign: 'center',
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#a8a29e',
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 8,
   },
   logoutButton: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',

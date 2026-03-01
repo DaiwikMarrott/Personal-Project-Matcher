@@ -1,8 +1,8 @@
 /**
  * Sign Up Screen - Step 2
- * Skills and interests
+ * Skills and interests (with green header bar)
  */
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -19,13 +19,14 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createProfile } from '@/services/api';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function SignUpStep2() {
   const router = useRouter();
-  const { signUpWithEmail, user } = useAuth();
-  const [interests, setInterests] = useState<string[]>(['Coding', 'Research']);
+  const { signUpWithEmail } = useAuth();
+  const [interests, setInterests] = useState<string[]>([]);
   const [newInterest, setNewInterest] = useState('');
-  const [expertise, setExpertise] = useState<string[]>(['Frontend', 'AI']);
+  const [expertise, setExpertise] = useState<string[]>([]);
   const [newExpertise, setNewExpertise] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -52,84 +53,96 @@ export default function SignUpStep2() {
   };
 
   const handleComplete = async () => {
+    // Validate that at least one interest or expertise is provided
+    if (interests.length === 0 && expertise.length === 0) {
+      Alert.alert('Add Your Skills', 'Please add at least one interest or expertise to help us match you with projects.');
+      return;
+    }
+
     setLoading(true);
     try {
-      // Get saved form data
+      // Get saved form data from step 1
       const savedData = await AsyncStorage.getItem('signupData');
       if (!savedData) {
-        Alert.alert('Error', 'Registration data not found');
+        Alert.alert('Error', 'Registration data not found. Please start over.');
         router.push('/signup');
         return;
       }
 
       const formData = JSON.parse(savedData);
 
-      // Sign up with Supabase
-      await signUpWithEmail(formData.email, formData.password);
+      // Step 1: Create Supabase auth user
+      console.log('Creating Supabase user...');
+      const signupResult = await signUpWithEmail(formData.email, formData.password);
+      console.log('Signup result:', signupResult);
       
-      // Wait a moment for auth to complete
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Check if we got a user back (might need email confirmation)
+      if (!signupResult || !signupResult.user) {
+        console.error('No user returned from signup');
+        Alert.alert(
+          'Account Created', 
+          'Please check your email to verify your account before signing in.'
+        );
+        setLoading(false);
+        router.replace('/signin');
+        return;
+      }
 
-      // The auth context should now have the user
-      // We'll need to create the profile in the useEffect after user is set
-      await AsyncStorage.setItem('pendingProfile', JSON.stringify({
-        formData,
-        interests,
-        expertise,
-      }));
+      console.log('User created, now creating profile...');
+      
+      // Step 2: Create profile immediately
+      const urls: any = {};
+      if (formData.github) urls.github = formData.github;
+      if (formData.linkedin) urls.linkedin = formData.linkedin;
+      if (formData.discord) urls.discord = formData.discord;
+      if (formData.instagram) urls.instagram = formData.instagram;
 
+      const result = await createProfile({
+        auth_user_id: signupResult.user.id,
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        email: formData.email,
+        major: formData.major || 'Undeclared',
+        interests: interests.join(', '),
+        skills: expertise,
+        urls,
+        experience_level: 'beginner',
+      });
+
+      // Clean up AsyncStorage
+      await AsyncStorage.removeItem('signupData');
+
+      if (result.error) {
+        console.error('Profile creation error:', result.error);
+        Alert.alert('Profile Creation Failed', result.error);
+        setLoading(false);
+      } else {
+        console.log('Profile created successfully!');
+        Alert.alert('Success', 'Your account has been created! Please sign in.');
+        router.replace('/signin');
+      }
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to create account');
+      console.error('Signup error:', error);
+      Alert.alert('Sign Up Failed', error.message || 'Failed to create account. Please try again.');
       setLoading(false);
     }
   };
 
-  // Create profile after user is authenticated
-  useEffect(() => {
-    const createUserProfile = async () => {
-      if (user) {
-        const pendingData = await AsyncStorage.getItem('pendingProfile');
-        if (pendingData) {
-          const { formData, interests, expertise } = JSON.parse(pendingData);
-          
-          // Create profile in backend
-          const urls: any = {};
-          if (formData.github) urls.github = formData.github;
-          if (formData.linkedin) urls.linkedin = formData.linkedin;
-          if (formData.discord) urls.discord = formData.discord;
-          if (formData.instagram) urls.instagram = formData.instagram;
-
-          const result = await createProfile({
-            auth_user_id: user.id,
-            first_name: formData.firstName,
-            last_name: formData.lastName,
-            email: formData.email,
-            major: formData.major,
-            interests: interests.join(', '),
-            skills: expertise,
-            urls,
-          });
-
-          await AsyncStorage.removeItem('signupData');
-          await AsyncStorage.removeItem('pendingProfile');
-
-          if (result.error) {
-            Alert.alert('Error', result.error);
-            setLoading(false);
-          } else {
-            // Profile created successfully, navigate to main app
-            router.replace('/(tabs)');
-          }
-        }
-      }
-    };
-
-    createUserProfile();
-  }, [user]);
-
   return (
     <>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle="light-content" />
+      {/* Green Header Bar */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Your Skills</Text>
+        <View style={styles.backButton} />
+      </View>
+
       <View style={styles.container}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -206,25 +219,16 @@ export default function SignUpStep2() {
                 </View>
               </View>
 
-              <View style={styles.footer}>
-                <TouchableOpacity
-                  onPress={() => router.back()}
-                  style={styles.backButton}
-                >
-                  <Text style={styles.backText}>← Back</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.button}
-                  onPress={handleComplete}
-                  disabled={loading}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.buttonText}>
-                    {loading ? 'Creating Account...' : 'Sign Up'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                style={[styles.button, loading && styles.buttonDisabled]}
+                onPress={handleComplete}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.buttonText}>
+                  {loading ? 'Creating Account...' : 'Complete Sign Up'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -234,6 +238,33 @@ export default function SignUpStep2() {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#10B981',
+    paddingTop: Platform.OS === 'ios' ? 50 : 20,
+    paddingBottom: 15,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   container: {
     flex: 1,
     backgroundColor: '#e6f7ed',
@@ -244,7 +275,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     padding: 24,
-    paddingTop: 60,
+    paddingTop: 24,
   },
   card: {
     backgroundColor: 'rgba(255, 255, 255, 0.6)',
@@ -348,37 +379,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#059669',
   },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 32,
-    paddingTop: 32,
-    borderTopWidth: 1,
-    borderTopColor: '#a7f3d0',
-  },
-  backButton: {
-    padding: 16,
-  },
-  backText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#78716c',
-  },
   button: {
     backgroundColor: '#10B981',
-    paddingHorizontal: 40,
     paddingVertical: 16,
     borderRadius: 16,
+    marginTop: 32,
     shadowColor: '#10B981',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.2,
     shadowRadius: 20,
     elevation: 5,
   },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
   buttonText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '700',
+    textAlign: 'center',
   },
 });

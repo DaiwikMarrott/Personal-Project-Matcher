@@ -13,8 +13,9 @@ import {
   RefreshControl,
   Image,
 } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '@/contexts/AuthContext';
 import { getProjects, getRecommendedProjects } from '@/services/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -34,6 +35,15 @@ export default function ExploreScreen() {
     getUserProfile();
     loadProjects();
   }, [user]);
+
+  // Reload projects when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (!loading) {
+        loadProjects();
+      }
+    }, [loading, sortByMatch, userProfileId])
+  );
 
   useEffect(() => {
     if (sortByMatch && userProfileId) {
@@ -118,21 +128,6 @@ export default function ExploreScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Green Header Bar */}
-      <View style={styles.headerBar}>
-        <TouchableOpacity
-          style={styles.headerBackButton}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <IconSymbol size={24} name="chevron.left" color="#fff" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/(tabs)')}>
-          <Text style={styles.headerTitle}>Discover Projects</Text>
-        </TouchableOpacity>
-        <View style={{ width: 44 }} />
-      </View>
-
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
@@ -256,27 +251,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#e6f7ed',
-  },
-  headerBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#10B981',
-  },
-  headerBackButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#fff',
   },
   loadingContainer: {
     flex: 1,

@@ -1,6 +1,6 @@
 /**
  * Landing Screen
- * Inspired by collabb's landing page
+ * Welcome page for Projects Matcher
  */
 import { StyleSheet, View, Text, TouchableOpacity, StatusBar } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -17,7 +17,7 @@ export default function Landing() {
             Build the <Text style={styles.highlight}>future</Text> together.
           </Text>
           <Text style={styles.subtitle}>
-            collabb is the premier platform for passionate creators, developers, and designers to find their perfect project match. Stop building alone.
+            Projects Matcher is the premier platform for passionate creators, developers, and designers to find their perfect project match. Stop building alone.
           </Text>
           <TouchableOpacity
             style={styles.button}

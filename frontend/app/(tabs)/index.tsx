@@ -12,9 +12,10 @@ import {
   Text,
   Image,
 } from 'react-native';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { getRecommendedProjects, getProjects, Profile as ApiProfile } from '@/services/api';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 
@@ -26,23 +27,37 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Load user profile and recommended projects
+  // Load user profile and recommended projects on mount
   useEffect(() => {
     loadData();
   }, [user]);
 
+  // Reload data when screen comes into focus (to show updated projects)
+  useFocusEffect(
+    useCallback(() => {
+      if (!loading) {
+        loadData();
+      }
+    }, [loading])
+  );
+
   const loadData = async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     try {
       // Check if profile exists
       const { exists, profile: userProfile } = await checkProfileExists(user.id);
       
-      if (!exists) {
-        router.replace('/create-profile');
+      if (!exists || !userProfile) {
+        console.log('[HomeScreen] No profile found, but user should have been redirected at root level');
+        setLoading(false);
         return;
       }
 
+      console.log('[HomeScreen] Profile loaded:', userProfile.id);
       setProfile(userProfile);
 
       // Load recommended projects
@@ -101,23 +116,32 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />
         }
       >
-      {/* Scrollable Header with Profile Button */}
+      {/* Scrollable Header with Profile and Notifications */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Projects Matcher</Text>
-        <TouchableOpacity
-          style={styles.profileButton}
-          onPress={() => router.push('/(tabs)/profile')}
-          activeOpacity={0.7}
-        >
-          {profile?.profile_picture_url ? (
-            <Image
-              source={{ uri: profile.profile_picture_url }}
-              style={styles.profileImage}
-            />
-          ) : (
-            <IconSymbol size={24} name="person.fill" color="#065f46" />
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity
+            style={styles.notificationButton}
+            onPress={() => router.push('/notifications')}
+            activeOpacity={0.7}
+          >
+            <IconSymbol size={24} name="bell.fill" color="#065f46" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.profileButton}
+            onPress={() => router.push('/(tabs)/profile')}
+            activeOpacity={0.7}
+          >
+            {profile?.profile_picture_url ? (
+              <Image
+                source={{ uri: profile.profile_picture_url }}
+                style={styles.profileImage}
+              />
+            ) : (
+              <IconSymbol size={24} name="person.fill" color="#065f46" />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
       {/* Dashboard Stats */}
       <View style={styles.dashboard}>
@@ -252,6 +276,21 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#10B981',
     letterSpacing: -1,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  notificationButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#a7f3d0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
   profileButton: {
     width: 44,

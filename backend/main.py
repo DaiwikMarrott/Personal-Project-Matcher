@@ -9,6 +9,9 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 import os
 import logging
+import warnings
+# Suppress the deprecation warning for google.generativeai
+warnings.filterwarnings('ignore', message='All support for the.*google.generativeai.*package has ended')
 import google.generativeai as genai
 import base64
 import mimetypes
@@ -42,13 +45,14 @@ async def log_requests(request, call_next):
     logger.info(f"Response status: {response.status_code}")
     return response
 
-# Initialize Supabase client
+# Initialize Supabase client with timeout options
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("Missing SUPABASE_URL or SUPABASE_ANON_KEY environment variables")
 
+# Create Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Initialize Google Gemini
@@ -135,6 +139,33 @@ class MatchRequest(BaseModel):
 class ProjectStatusUpdate(BaseModel):
     status: str
     owner_id: str  # For verification
+
+
+class NotificationCreate(BaseModel):
+    recipient_id: str  # Profile ID of the recipient
+    sender_id: str  # Profile ID of the sender
+    project_id: Optional[str] = None
+    notification_type: str  # 'interest', 'message', etc.
+    message: Optional[str] = None
+
+
+class NotificationResponse(BaseModel):
+    id: str
+    recipient_id: str
+    sender_id: str
+    project_id: Optional[str] = None
+    notification_type: str
+    message: Optional[str] = None
+    read: bool
+    created_at: str
+    # Populated fields
+    sender_first_name: Optional[str] = None
+    sender_last_name: Optional[str] = None
+    sender_profile_picture_url: Optional[str] = None
+    sender_skills: Optional[List[str]] = None
+    sender_interests: Optional[str] = None
+    sender_experience_level: Optional[str] = None
+    project_title: Optional[str] = None
 
 
 # Health check
@@ -289,25 +320,64 @@ async def check_profile_exists(auth_user_id: str):
     Check if a user has created a profile.
     Returns profile data if exists, or indicates profile doesn't exist.
     """
-    try:
-        response = supabase.table("profiles").select("*").eq("auth_user_id", auth_user_id).execute()
+    max_retries = 3
+    retry_delay = 0.5  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"[PROFILE CHECK] Checking profile for auth_user_id: {auth_user_id} (attempt {attempt + 1}/{max_retries})")
+            response = supabase.table("profiles").select("*").eq("auth_user_id", auth_user_id).execute()
+            logger.info(f"[PROFILE CHECK] Query response: {len(response.data) if response.data else 0} profiles found")
+            
+            if response.data and len(response.data) > 0:
+                logger.info(f"[PROFILE CHECK] Profile EXISTS for user {auth_user_id}")
+                return {
+                    "exists": True,
+                    "profile": response.data[0]
+                }
+            else:
+                logger.info(f"[PROFILE CHECK] Profile DOES NOT EXIST for user {auth_user_id}")
+                return {
+                    "exists": False,
+                    "profile": None
+                }
         
-        if response.data and len(response.data) > 0:
-            return {
-                "exists": True,
-                "profile": response.data[0]
-            }
-        else:
-            return {
-                "exists": False,
-                "profile": None
-            }
+        except Exception as e:
+            logger.error(f"[PROFILE CHECK] Error on attempt {attempt + 1}: {str(e)}")
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(retry_delay)
+                continue
+            else:
+                # Last attempt failed, return error
+                logger.error(f"[PROFILE CHECK] All retries exhausted. Error: {str(e)}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error checking profile after {max_retries} attempts: {str(e)}"
+                )
+
+
+@app.get("/profiles/debug/list-all")
+async def debug_list_all_profiles():
+    """
+    DEBUG ENDPOINT: List all profiles with their auth_user_ids.
+    Use this to diagnose profile detection issues.
+    """
+    try:
+        response = supabase.table("profiles").select("id, auth_user_id, first_name, last_name, email, created_at").execute()
+        
+        logger.info(f"[DEBUG] Found {len(response.data) if response.data else 0} total profiles in database")
+        
+        return {
+            "total_profiles": len(response.data) if response.data else 0,
+            "profiles": response.data or []
+        }
     
     except Exception as e:
-        logger.error(f"Error checking profile: {str(e)}")
+        logger.error(f"[DEBUG] Error listing profiles: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error checking profile: {str(e)}"
+            detail=f"Error listing profiles: {str(e)}"
         )
 
 
@@ -319,11 +389,15 @@ async def create_profile(profile: ProfileCreate):
     The auth_user_id should match the Supabase auth.users.id.
     """
     try:
-        logger.info(f"Creating profile for user {profile.auth_user_id}")
+        logger.info(f"[PROFILE CREATE] Creating profile for auth_user_id: {profile.auth_user_id}")
+        logger.info(f"[PROFILE CREATE] Profile data: {profile.first_name} {profile.last_name}, {profile.email}")
         
         # Check if profile already exists
         existing = supabase.table("profiles").select("id").eq("auth_user_id", profile.auth_user_id).execute()
+        logger.info(f"[PROFILE CREATE] Existing profiles check: {len(existing.data) if existing.data else 0} found")
+        
         if existing.data and len(existing.data) > 0:
+            logger.warning(f"[PROFILE CREATE] Profile already exists for user {profile.auth_user_id}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Profile already exists for this user"
@@ -355,8 +429,12 @@ async def create_profile(profile: ProfileCreate):
                 detail="Failed to create profile"
             )
         
-        logger.info(f"Successfully created profile with ID {response.data[0]['id']}")
-        return response.data[0]
+        created_profile = response.data[0]
+        logger.info(f"[PROFILE CREATE] ✅ Successfully created profile!")
+        logger.info(f"[PROFILE CREATE] Profile ID: {created_profile['id']}")
+        logger.info(f"[PROFILE CREATE] Auth User ID: {created_profile.get('auth_user_id', 'MISSING')}")
+        logger.info(f"[PROFILE CREATE] Name: {created_profile.get('first_name')} {created_profile.get('last_name')}")
+        return created_profile
     
     except HTTPException:
         raise
@@ -409,16 +487,19 @@ async def update_profile(auth_user_id: str, updates: dict):
                 updates['profile_ai_summary'] = ai_summary
         
         # Update in Supabase
-        response = supabase.table("profiles").update(updates).eq("id", profile_id).execute()
+        update_response = supabase.table("profiles").update(updates).eq("id", profile_id).execute()
         
-        if not response.data:
+        if not update_response.data:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to update profile"
             )
         
+        # Fetch the updated profile to return complete data
+        profile_response = supabase.table("profiles").select("*").eq("id", profile_id).execute()
+        
         logger.info(f"Successfully updated profile {profile_id}")
-        return response.data[0]
+        return profile_response.data[0]
     
     except HTTPException:
         raise
@@ -716,6 +797,8 @@ async def update_project(project_id: str, updates: dict):
         # Always update the timestamp
         update_data['updated_at'] = 'NOW()'
         
+        logger.info(f"Updating project {project_id} with data: {update_data}")
+        
         # Update the project with only the provided fields
         update_response = supabase.table("projects").update(update_data).eq("id", project_id).execute()
         
@@ -725,8 +808,11 @@ async def update_project(project_id: str, updates: dict):
                 detail="Failed to update project"
             )
         
-        logger.info(f"Project {project_id} updated successfully")
-        return update_response.data[0]
+        # Fetch the updated project to return complete data
+        project_response = supabase.table("projects").select("*").eq("id", project_id).execute()
+        
+        logger.info(f"Project {project_id} updated successfully: {project_response.data[0]}")
+        return project_response.data[0]
     
     except HTTPException:
         raise
@@ -770,6 +856,9 @@ async def update_project_status(project_id: str, status_update: ProjectStatusUpd
             )
         
         # Update the status
+        logger.info(f"Updating project {project_id} status to: {status_update.status}")
+        
+        # Update project status
         update_response = supabase.table("projects").update({
             "status": status_update.status,
             "updated_at": "NOW()"
@@ -781,7 +870,11 @@ async def update_project_status(project_id: str, status_update: ProjectStatusUpd
                 detail="Failed to update project status"
             )
         
-        return update_response.data[0]
+        # Fetch updated project with complete data
+        project_response = supabase.table("projects").select("*").eq("id", project_id).execute()
+        
+        logger.info(f"Project {project_id} status updated successfully: {project_response.data[0]}")
+        return project_response.data[0]
     
     except HTTPException:
         raise
@@ -883,6 +976,195 @@ async def get_projects(project_status: Optional[str] = "open", limit: int = 50):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching projects: {str(e)}"
+        )
+
+
+# ====== NOTIFICATIONS ======
+
+# Express interest in a project (creates a notification)
+@app.post("/project/{project_id}/express-interest")
+async def express_interest(project_id: str, interest_data: dict):
+    """
+    Express interest in a project - sends a notification to the project owner
+    interest_data should contain: sender_id (profile ID of interested user)
+    """
+    try:
+        sender_id = interest_data.get('sender_id')
+        message = interest_data.get('message', '')
+        
+        if not sender_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="sender_id is required"
+            )
+        
+        # Verify the project exists
+        project_response = supabase.table("projects").select("*").eq("id", project_id).execute()
+        
+        if not project_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        
+        project = project_response.data[0]
+        recipient_id = project['owner_id']
+        
+        # Don't allow expressing interest in your own project
+        if sender_id == recipient_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="You cannot express interest in your own project"
+            )
+        
+        # Check if already expressed interest
+        existing_notification = supabase.table("notifications").select("*").eq("project_id", project_id).eq("sender_id", sender_id).eq("notification_type", "interest").execute()
+        
+        if existing_notification.data and len(existing_notification.data) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="You have already expressed interest in this project"
+            )
+        
+        # Create notification
+        notification = {
+            "recipient_id": recipient_id,
+            "sender_id": sender_id,
+            "project_id": project_id,
+            "notification_type": "interest",
+            "message": message,
+            "read": False
+        }
+        
+        response = supabase.table("notifications").insert(notification).execute()
+        
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create notification"
+            )
+        
+        logger.info(f"Interest notification created: {sender_id} -> {recipient_id} for project {project_id}")
+        
+        return {
+            "success": True,
+            "message": "Interest expressed successfully",
+            "notification": response.data[0]
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error expressing interest: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error expressing interest: {str(e)}"
+        )
+
+
+# Get notifications for a user
+@app.get("/notifications/{profile_id}")
+async def get_notifications(profile_id: str, unread_only: bool = False):
+    """Get all notifications for a user, with sender and project details"""
+    try:
+        query = supabase.table("notifications").select("*").eq("recipient_id", profile_id).order("created_at", desc=True)
+        
+        if unread_only:
+            query = query.eq("read", False)
+        
+        response = query.execute()
+        notifications = response.data or []
+        
+        # Enrich notifications with sender and project details
+        enriched_notifications = []
+        for notification in notifications:
+            try:
+                # Fetch sender profile
+                sender_response = supabase.table("profiles").select("first_name, last_name, profile_picture_url, skills, interests, experience_level").eq("id", notification['sender_id']).execute()
+                if sender_response.data and len(sender_response.data) > 0:
+                    sender = sender_response.data[0]
+                    notification['sender_first_name'] = sender.get('first_name', '')
+                    notification['sender_last_name'] = sender.get('last_name', '')
+                    notification['sender_profile_picture_url'] = sender.get('profile_picture_url')
+                    notification['sender_skills'] = sender.get('skills', [])
+                    notification['sender_interests'] = sender.get('interests', '')
+                    notification['sender_experience_level'] = sender.get('experience_level', '')
+                
+                # Fetch project details if project_id exists
+                if notification.get('project_id'):
+                    project_response = supabase.table("projects").select("title").eq("id", notification['project_id']).execute()
+                    if project_response.data and len(project_response.data) > 0:
+                        notification['project_title'] = project_response.data[0].get('title', '')
+                
+                enriched_notifications.append(notification)
+            except Exception as e:
+                logger.warning(f"Error enriching notification {notification.get('id')}: {str(e)}")
+                enriched_notifications.append(notification)
+        
+        logger.info(f"Fetched {len(enriched_notifications)} notifications for user {profile_id}")
+        
+        return {
+            "notifications": enriched_notifications,
+            "count": len(enriched_notifications)
+        }
+    
+    except Exception as e:
+        logger.error(f"Error fetching notifications: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching notifications: {str(e)}"
+        )
+
+
+# Mark notification as read
+@app.patch("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str):
+    """Mark a notification as read"""
+    try:
+        response = supabase.table("notifications").update({"read": True}).eq("id", notification_id).execute()
+        
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Notification not found"
+            )
+        
+        logger.info(f"Notification {notification_id} marked as read")
+        
+        return {
+            "success": True,
+            "notification": response.data[0]
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error marking notification as read: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error marking notification as read: {str(e)}"
+        )
+
+
+# Mark all notifications as read for a user
+@app.patch("/notifications/{profile_id}/mark-all-read")
+async def mark_all_notifications_read(profile_id: str):
+    """Mark all notifications as read for a user"""
+    try:
+        response = supabase.table("notifications").update({"read": True}).eq("recipient_id", profile_id).eq("read", False).execute()
+        
+        logger.info(f"All notifications marked as read for user {profile_id}")
+        
+        return {
+            "success": True,
+            "message": f"Marked {len(response.data) if response.data else 0} notifications as read"
+        }
+    
+    except Exception as e:
+        logger.error(f"Error marking all notifications as read: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error marking all notifications as read: {str(e)}"
         )
 
 
