@@ -271,6 +271,19 @@ export default function HomeScreen() {
                   style={styles.projectCard}
                   onPress={() => router.push(`/project/${project.id}`)}
                 >
+                  {/* Project Image */}
+                  {project.project_image_url ? (
+                    <Image 
+                      source={{ uri: project.project_image_url }} 
+                      style={styles.projectImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.projectImagePlaceholder}>
+                      <ThemedText style={styles.projectImageEmoji}>💀</ThemedText>
+                    </View>
+                  )}
+                  
                   <View style={styles.projectHeader}>
                     <ThemedText style={styles.projectTitle} numberOfLines={1}>
                       {project.title}
@@ -326,6 +339,19 @@ export default function HomeScreen() {
                   style={[styles.projectCard, styles.closedProjectCard]}
                   onPress={() => router.push(`/project/${project.id}`)}
                 >
+                  {/* Project Image */}
+                  {project.project_image_url ? (
+                    <Image 
+                      source={{ uri: project.project_image_url }} 
+                      style={styles.projectImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.projectImagePlaceholder}>
+                      <ThemedText style={styles.projectImageEmoji}>💀</ThemedText>
+                    </View>
+                  )}
+                  
                   <View style={styles.projectHeader}>
                     <ThemedText style={styles.projectTitle} numberOfLines={1}>
                       {project.title}
@@ -635,6 +661,35 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 8,
     elevation: 2,
+    overflow: 'hidden',
+  },
+  projectImage: {
+    width: '100%',
+    height: 140,
+    marginLeft: -16,
+    marginRight: -16,
+    marginTop: -16,
+    marginBottom: 12,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+  },
+  projectImagePlaceholder: {
+    width: '100%',
+    height: 140,
+    marginLeft: -16,
+    marginRight: -16,
+    marginTop: -16,
+    marginBottom: 12,
+    backgroundColor: Colors.backgroundSecondary,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border.light,
+  },
+  projectImageEmoji: {
+    fontSize: 48,
   },
   projectHeader: {
     flexDirection: 'row',
