@@ -1,4 +1,4 @@
-import { StyleSheet, ScrollView, View, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { StyleSheet, ScrollView, View, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -23,6 +23,7 @@ interface Project {
   tags: string[];
   status: string;
   owner_id: string;
+  project_image_url?: string | null;
 }
 
 export default function ExploreScreen() {
@@ -228,21 +229,39 @@ export default function ExploreScreen() {
             </ThemedText>
           </View>
         ) : (
-          <View style={styles.projectsList}>
+          <View style={styles.projectsContainer}>
             <ThemedText style={styles.projectCount}>
               {projects.length} Open {projects.length === 1 ? 'Project' : 'Projects'}
             </ThemedText>
             
-            {projects.map((project) => (
-              <TouchableOpacity 
-                key={project.id} 
-                style={styles.projectCard}
-                onPress={() => router.push(`/project/${project.id}`)}
-              >
-                <View style={styles.projectHeader}>
-                  <ThemedText type="defaultSemiBold" style={styles.projectTitle}>
-                    {project.title}
-                  </ThemedText>
+            <View style={styles.projectsGrid}>
+              {projects.map((project) => (
+                <TouchableOpacity 
+                  key={project.id} 
+                  style={styles.projectCard}
+                  onPress={() => router.push(`/project/${project.id}`)}
+                >
+                  {/* Project Image */}
+                  {project.project_image_url ? (
+                    <Image 
+                      source={{ uri: project.project_image_url }} 
+                      style={styles.projectImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.projectImagePlaceholder}>
+                      <ThemedText style={styles.projectImageEmoji}>💀</ThemedText>
+                    </View>
+                  )}
+                  
+                  {/* Title Overlay */}
+                  <View style={styles.projectTitleContainer}>
+                    <ThemedText type="defaultSemiBold" style={styles.projectTitle} numberOfLines={2}>
+                      {project.title}
+                    </ThemedText>
+                  </View>
+                  
+                  {/* Status Badge - Top Right */}
                   <View style={[styles.statusBadge, { 
                     backgroundColor: project.status === 'open' ? Colors.status.open : Colors.status.closed 
                   }]}>
@@ -250,29 +269,9 @@ export default function ExploreScreen() {
                       {project.status === 'open' ? 'OPEN' : 'CLOSED'}
                     </ThemedText>
                   </View>
-                </View>
-                
-                <ThemedText style={styles.projectDescription} numberOfLines={3}>
-                  {project.description}
-                </ThemedText>
-                
-                {project.tags && project.tags.length > 0 && (
-                  <View style={styles.tagsContainer}>
-                    {project.tags.slice(0, 4).map((tag, index) => (
-                      <View key={index} style={styles.tag}>
-                        <ThemedText style={styles.tagText}>#{tag}</ThemedText>
-                      </View>
-                    ))}
-                  </View>
-                )}
-                
-                <View style={styles.projectFooter}>
-                  <ThemedText style={styles.matchButton}>
-                    🔗 View Matches
-                  </ThemedText>
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         )}
       </ThemedView>
@@ -393,7 +392,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 15,
   },
-  projectsList: {
+  projectsContainer: {
     marginBottom: 20,
   },
   projectCount: {
@@ -402,80 +401,71 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
+  projectsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
   projectCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
+    borderRadius: 14,
+    width: '100%',
+    height: 280,
     shadowColor: Colors.shadow,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOpacity: 0.15,
+    shadowRadius: 7,
+    elevation: 3,
+    overflow: 'hidden',
+    position: 'relative',
+    marginBottom: 12,
   },
-  projectHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
+  projectImage: {
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
+  },
+  projectImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: Colors.backgroundSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+  },
+  projectImageEmoji: {
+    fontSize: 48,
+    opacity: 0.6,
+  },
+  projectTitleContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    padding: 10,
   },
   projectTitle: {
-    fontSize: 18,
+    fontSize: 13,
     fontWeight: '600',
-    flex: 1,
-    marginRight: 12,
-    color: Colors.text.primary,
+    color: '#FFFFFF',
+    lineHeight: 16,
   },
   statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    paddingHorizontal: 7,
+    paddingVertical: 3.5,
+    borderRadius: 7,
   },
   statusText: {
     color: Colors.text.inverse,
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'capitalize',
+    fontSize: 9.5,
+    fontWeight: '700',
+    textTransform: 'uppercase',
   },
-  projectDescription: {
-    color: Colors.text.secondary,
-    marginBottom: 14,
-    lineHeight: 22,
-    fontSize: 15,
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 14,
-    gap: 6,
-  },
-  tag: {
-    backgroundColor: Colors.accentLight,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  tagText: {
-    fontSize: 13,
-    color: Colors.primaryDark,
-    fontWeight: '500',
-  },
-  projectFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.border.light,
-  },
-  matchButton: {
-    color: Colors.primary,
-    fontWeight: '600',
-    fontSize: 15,
-  },
+
   troubleshootContainer: {
     backgroundColor: Colors.backgroundSecondary,
     padding: 20,
