@@ -20,6 +20,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import { createProject } from '@/services/api';
 import * as ImagePicker from 'expo-image-picker';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function PostProjectScreen() {
   const { user, checkProfileExists } = useAuth();
@@ -122,23 +123,34 @@ export default function PostProjectScreen() {
 
       if (result.error) {
         Alert.alert('Error', result.error);
+        setLoading(false);
       } else {
-        Alert.alert('Success', 'Project created successfully!', [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Clear form
-              setTitle('');
-              setDescription('');
-              setTags('');
-              setDuration('');
-              setAvailability('');
-              setImageUri(null);
-              // Navigate to explore
-              router.push('/(tabs)/explore');
+        // Clear form
+        setTitle('');
+        setDescription('');
+        setTags('');
+        setDuration('');
+        setAvailability('');
+        setImageUri(null);
+        setLoading(false);
+        
+        // Show success message and navigate
+        Alert.alert(
+          '🎉 Success!', 
+          'Your project has been posted successfully. Check out the Explore tab to see it!',
+          [
+            {
+              text: 'View in Explore',
+              onPress: () => {
+                router.push('/(tabs)/explore');
+              },
             },
-          },
-        ]);
+            {
+              text: 'Post Another',
+              style: 'cancel',
+            },
+          ]
+        );
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to create project');
@@ -157,6 +169,20 @@ export default function PostProjectScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        {/* Brand Header */}
+        <View style={styles.brandHeader}>
+          <TouchableOpacity onPress={() => router.push('/(tabs)')}>
+            <Text style={styles.brandTitle}>Projects Matcher</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+          >
+            <IconSymbol size={24} name="chevron.left" color="#fff" />
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.card}>
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Project Name</Text>
@@ -272,6 +298,32 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     paddingBottom: 40,
+  },
+  brandHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    marginBottom: 16,
+  },
+  brandTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#10B981',
+    letterSpacing: -1,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   card: {
     backgroundColor: 'rgba(255, 255, 255, 0.6)',

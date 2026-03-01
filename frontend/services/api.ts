@@ -54,6 +54,8 @@ export interface ProfileCreate {
 export interface Project {
   id: string;
   owner_id: string;
+  owner_first_name?: string;
+  owner_last_name?: string;
   title: string;
   description: string;
   tags?: string[];
@@ -138,6 +140,31 @@ export async function createProfile(profile: ProfileCreate): Promise<ApiResponse
     if (!response.ok) {
       const error = await response.json();
       return { error: error.detail || 'Failed to create profile' };
+    }
+
+    const data = await response.json();
+    return { data };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Update an existing profile
+ */
+export async function updateProfile(authUserId: string, updates: Partial<ProfileCreate>): Promise<ApiResponse<Profile>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/profile/${authUserId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to update profile' };
     }
 
     const data = await response.json();
@@ -341,6 +368,34 @@ export async function updateProjectStatus(
     if (!response.ok) {
       const error = await response.json();
       return { error: error.detail || 'Failed to update project status' };
+    }
+
+    const data = await response.json();
+    return { data };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Delete a project
+ */
+export async function deleteProject(
+  projectId: string, 
+  ownerId: string
+): Promise<ApiResponse<{ success: boolean; message: string }>> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/project/${projectId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ owner_id: ownerId }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return { error: error.detail || 'Failed to delete project' };
     }
 
     const data = await response.json();

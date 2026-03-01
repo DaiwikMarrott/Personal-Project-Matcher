@@ -17,13 +17,16 @@ import { useState, useEffect } from 'react';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useAuth } from '@/contexts/AuthContext';
-import { updateProject } from '@/services/api';
+import { updateProject, deleteProject } from '@/services/api';
 
 interface ProjectData {
   id: string;
   title: string;
   description: string;
   owner_id: string;
+  owner_first_name?: string;
+  owner_last_name?: string;
+  project_image_url?: string;
   tags: string[];
   duration?: string;
   availability?: string;
@@ -58,10 +61,21 @@ export default function ProjectDetailScreen() {
         
         // Check if user owns this project
         if (user) {
+          console.log('[ProjectDetail] Checking ownership - user.id:', user.id);
+          console.log('[ProjectDetail] Project owner_id:', projectData.owner_id);
+          
           const { exists, profile } = await checkProfileExists(user.id);
+          console.log('[ProjectDetail] Profile check - exists:', exists, 'profile:', profile);
+          
           if (exists && profile && projectData.owner_id === profile.id) {
+            console.log('[ProjectDetail] User is owner!');
             setIsOwner(true);
+          } else {
+            console.log('[ProjectDetail] User is NOT owner');
+            console.log('[ProjectDetail] Comparison:', projectData.owner_id, '===', profile?.id);
           }
+        } else {
+          console.log('[ProjectDetail] No user logged in');
         }
       }
     } catch (error) {
@@ -85,6 +99,7 @@ export default function ProjectDetailScreen() {
     
     try {
       const result = await updateProject(project.id, {
+        owner_id: project.owner_id,  // Required for ownership verification
         description: editedDescription,
       });
       
@@ -98,6 +113,37 @@ export default function ProjectDetailScreen() {
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to update project');
     }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!project) return;
+    
+    Alert.alert(
+      'Delete Project',
+      'Are you sure you want to delete this project? This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await deleteProject(project.id, project.owner_id);
+              
+              if (result.error) {
+                Alert.alert('Error', result.error);
+              } else {
+                Alert.alert('Success', 'Project deleted successfully', [
+                  { text: 'OK', onPress: () => router.back() }
+                ]);
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to delete project');
+            }
+          }
+        }
+      ]
+    );
   };
 
   if (loading) {
@@ -128,18 +174,36 @@ export default function ProjectDetailScreen() {
           onPress={() => router.back()}
           activeOpacity={0.7}
         >
-          <IconSymbol size={24} name="chevron.left" color="#065f46" />
+          <IconSymbol size={24} name="chevron.left" color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Project Details</Text>
+        <TouchableOpacity onPress={() => router.push('/(tabs)')}>
+          <Text style={styles.headerTitle}>Projects Matcher</Text>
+        </TouchableOpacity>
         <View style={{ width: 44 }} />
       </View>
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        {/* Hero Image */}
+        {project.project_image_url ? (
+          <View style={styles.heroImageContainer}>
+            <Image
+              source={{ uri: project.project_image_url }}
+              style={styles.heroImage}
+            />
+          </View>
+        ) : (
+          <View style={styles.heroPlaceholderContainer}>
+            <Text style={styles.heroPlaceholderText}>📁</Text>
+          </View>
+        )}
+
         {/* Title Section */}
         <View style={styles.titleCard}>
           <Text style={styles.title}>{project.title}</Text>
-          {project.owner_id && (
-            <Text style={styles.owner}>Created by {project.owner_id.substring(0, 8)}...</Text>
+          {(project.owner_first_name || project.owner_last_name) && (
+            <Text style={styles.owner}>
+              Created by {project.owner_first_name || ''} {project.owner_last_name || ''}
+            </Text>
           )}
           {project.similarity_score !== undefined && (
             <View style={styles.matchBadge}>
@@ -357,10 +421,20 @@ export default function ProjectDetailScreen() {
           </View>
         )}
 
-        {/* Action Button */}
-        <TouchableOpacity style={styles.actionButton} activeOpacity={0.8}>
-          <Text style={styles.actionButtonText}>Express Interest</Text>
-        </TouchableOpacity>
+        {/* Action Buttons */}
+        {isOwner ? (
+          <TouchableOpacity 
+            style={styles.deleteButton} 
+            activeOpacity={0.8}
+            onPress={handleDeleteProject}
+          >
+            <Text style={styles.deleteButtonText}>🗑️ Delete Project</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.actionButton} activeOpacity={0.8}>
+            <Text style={styles.actionButtonText}>Express Interest</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </View>
   );
@@ -382,25 +456,28 @@ const styles = StyleSheet.create({
     borderBottomColor: '#a7f3d0',
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#065f46',
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#10B981',
+    letterSpacing: -1,
   },
   backButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#a7f3d0',
+    backgroundColor: '#10B981',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   container: {
     flex: 1,
   },
   content: {
-    padding: 20,
     paddingBottom: 40,
   },
   loadingContainer: {
@@ -432,13 +509,40 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
+  heroImageContainer: {
+    width: '100%',
+    height: 280,
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  heroPlaceholderContainer: {
+    width: '100%',
+    height: 280,
+    backgroundColor: '#d1fae5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroPlaceholderText: {
+    fontSize: 120,
+    opacity: 0.3,
+  },
   titleCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-    borderRadius: 24,
-    padding: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    marginHorizontal: 20,
+    marginTop: -60,
+    borderRadius: 28,
+    padding: 28,
     marginBottom: 20,
     borderWidth: 2,
     borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
   },
   title: {
     fontSize: 32,
@@ -468,6 +572,7 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: 24,
+    marginHorizontal: 20,
   },
   sectionTitle: {
     fontSize: 20,
@@ -670,6 +775,21 @@ const styles = StyleSheet.create({
     borderColor: '#059669',
   },
   actionButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: -0.5,
+  },
+  deleteButton: {
+    backgroundColor: '#dc2626',
+    paddingVertical: 20,
+    borderRadius: 24,
+    alignItems: 'center',
+    marginTop: 20,
+    borderWidth: 3,
+    borderColor: '#991b1b',
+  },
+  deleteButtonText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '900',

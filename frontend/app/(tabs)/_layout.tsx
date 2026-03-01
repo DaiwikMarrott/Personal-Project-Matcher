@@ -32,7 +32,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          headerTitle: 'collabb',
+          headerTitle: 'Projects Matcher',
           headerShown: false,  // Hide default header, we're using custom
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
@@ -41,6 +41,8 @@ export default function TabLayout() {
         name="explore"
         options={{
           title: 'Discover',
+          headerTitle: 'Projects Matcher',
+          headerShown: false,  // Hide default header, we're using custom
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="magnifyingglass" color={color} />,
         }}
       />
@@ -48,6 +50,8 @@ export default function TabLayout() {
         name="post"
         options={{
           title: 'Post Idea',
+          headerTitle: 'Projects Matcher',
+          headerShown: false,  // Hide default header, we're using custom
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="plus.circle.fill" color={color} />,
         }}
       />
@@ -55,6 +59,8 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
+          headerTitle: 'Projects Matcher',
+          headerShown: false,  // Hide default header, we're using custom
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
         }}
       />
