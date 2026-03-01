@@ -1,10 +1,12 @@
-import { StyleSheet, ScrollView, View, TouchableOpacity, ActivityIndicator, Platform, Image } from 'react-native';
+import { StyleSheet, ScrollView, View, TouchableOpacity, ActivityIndicator, Platform, Image, TextInput, Dimensions } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
 import { useFocusEffect, useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
+
+const windowWidth = Dimensions.get('window').width;
 
 // Use hardcoded URL for web, env variable for native
 const getApiUrl = () => {
@@ -24,19 +26,50 @@ interface Project {
   status: string;
   owner_id: string;
   project_image_url?: string | null;
+  similarity?: number;  // From recommended endpoint
+  similarity_score?: number;  // Normalized score for sorting
 }
 
 export default function ExploreScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortByMatch, setSortByMatch] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [backendOnline, setBackendOnline] = useState(false);
+  const [userProfileId, setUserProfileId] = useState<string | null>(null);
 
   useEffect(() => {
     checkBackendHealth();
-  }, []);
+    
+    // Get user profile ID for matching
+    const getUserProfile = async () => {
+      if (user) {
+        try {
+          console.log('Fetching user profile for:', user.id);
+          const response = await fetch(`${API_URL}/profile/check/${user.id}`);
+          if (response.ok) {
+            const data = await response.json();
+            console.log('Profile check response:', data);
+            if (data.exists && data.profile) {
+              console.log('Setting userProfileId:', data.profile.id);
+              setUserProfileId(data.profile.id);
+            } else {
+              console.log('User profile does not exist');
+              setUserProfileId(null);
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching user profile:', err);
+        }
+      }
+    };
+    
+    getUserProfile();
+  }, [user]);
 
   // Refresh projects when screen comes into focus (e.g., after creating a project)
   useFocusEffect(
@@ -73,6 +106,31 @@ export default function ExploreScreen() {
     }
   };
 
+  // Filter and search handler
+  useEffect(() => {
+    let filtered = [...projects];
+    
+    // Only show open projects
+    filtered = filtered.filter(p => p.status === 'open');
+    
+    // Apply search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(p => 
+        p.title.toLowerCase().includes(query) ||
+        p.description.toLowerCase().includes(query) ||
+        p.tags.some(tag => tag.toLowerCase().includes(query))
+      );
+    }
+    
+    // Sort by match score if enabled
+    if (sortByMatch && filtered.length > 0) {
+      filtered.sort((a, b) => (b.similarity_score || 0) - (a.similarity_score || 0));
+    }
+    
+    setFilteredProjects(filtered);
+  }, [projects, searchQuery, sortByMatch]);
+
   const fetchProjects = async () => {
     try {
       setLoading(true);
@@ -83,26 +141,69 @@ export default function ExploreScreen() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
-      // Fetch only open projects for the explore page
-      const response = await fetch(`${API_URL}/projects?project_status=open&limit=50`, {
-        signal: controller.signal,
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-      });
+      let allProjects = [];
       
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Server error: ${response.status} - ${errorText}`);
+      // If sort by match is enabled and user has profile, fetch recommended
+      if (sortByMatch && userProfileId) {
+        const response = await fetch(`${API_URL}/recommended-projects/${userProfileId}?limit=50`, {
+          signal: controller.signal,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Recommended projects loaded:', data.recommended_projects?.length || 0);
+          allProjects = data.recommended_projects || [];
+          // Add similarity_score field from similarity
+          allProjects = allProjects.map(p => ({ 
+            ...p, 
+            similarity_score: p.similarity 
+          }));
+          console.log('First project similarity:', allProjects[0]?.similarity_score);
+        }
+      } else {
+        // Fetch all open projects
+        const response = await fetch(`${API_URL}/projects?project_status=open&limit=100`, {
+          signal: controller.signal,
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Server error: ${response.status} - ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log('Projects loaded:', data.count);
+        allProjects = data.projects || [];
+        
+        // Randomize project order when not sorting by match
+        allProjects = allProjects.sort(() => Math.random() - 0.5);
+        console.log('Projects randomized for default view');
       }
       
-      const data = await response.json();
-      console.log('Projects loaded:', data.count);
-      setProjects(data.projects || []);
+      setProjects(allProjects);
+      setFilteredProjects(allProjects);
       setBackendOnline(true);
+      
+      // Log project similarity scores for debugging
+      if (sortByMatch && allProjects.length > 0) {
+        console.log('=== PROJECT MATCH SCORES ===');
+        allProjects.slice(0, 10).forEach((p: any, idx: number) => {
+          console.log(`${idx + 1}. ${p.title}: ${p.similarity_score ? Math.round(p.similarity_score * 100) + '%' : 'N/A'}`);
+        });
+        console.log('===========================');
+      }
     } catch (err: any) {
       console.error('Error fetching projects:', err);
       
@@ -156,6 +257,40 @@ export default function ExploreScreen() {
           <ThemedText style={styles.subtitle}>
             Find your next collaboration opportunity
           </ThemedText>
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search projects..."
+            placeholderTextColor={Colors.text.tertiary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          <ThemedText style={styles.searchIcon}>🔍</ThemedText>
+        </View>
+
+        {/* Filter Buttons */}
+        <View style={styles.filterContainer}>
+          <TouchableOpacity 
+            style={[styles.filterButton, sortByMatch && styles.filterButtonActive]}
+            onPress={() => {
+              setSortByMatch(!sortByMatch);
+              // Refetch when toggling match sorting
+              fetchProjects();
+            }}
+          >
+            <ThemedText style={[styles.filterButtonText, sortByMatch && styles.filterButtonTextActive]}>
+              {sortByMatch ? '✓ Sorted by Match' : '⭐ Sort by Match'}
+            </ThemedText>
+          </TouchableOpacity>
+          
+          {sortByMatch && !userProfileId && (
+            <ThemedText style={styles.filterHint}>
+              Create a profile to see personalized matches
+            </ThemedText>
+          )}
         </View>
 
         <TouchableOpacity 
@@ -218,28 +353,39 @@ export default function ExploreScreen() {
               Platform: {Platform.OS}
             </ThemedText>
           </View>
-        ) : projects.length === 0 ? (
+        ) : filteredProjects.length === 0 ? (
           <View style={styles.emptyState}>
-            <ThemedText style={styles.emptyEmoji}>📭</ThemedText>
+            <ThemedText style={styles.emptyEmoji}>{searchQuery ? '🔍' : '📭'}</ThemedText>
             <ThemedText type="subtitle" style={styles.emptyText}>
-              No projects yet
+              {searchQuery ? 'No matching projects' : 'No projects yet'}
             </ThemedText>
             <ThemedText style={styles.emptyDescription}>
-              Be the first to post a project idea!
+              {searchQuery ? 'Try a different search term' : 'Be the first to post a project idea!'}
             </ThemedText>
           </View>
         ) : (
           <View style={styles.projectsContainer}>
             <ThemedText style={styles.projectCount}>
-              {projects.length} Open {projects.length === 1 ? 'Project' : 'Projects'}
+              {filteredProjects.length} Open {filteredProjects.length === 1 ? 'Project' : 'Projects'}
+              {sortByMatch && ' (Sorted by Match)'}
             </ThemedText>
             
             <View style={styles.projectsGrid}>
-              {projects.map((project) => (
+              {filteredProjects.map((project) => {
+                // Skip projects without valid IDs
+                if (!project || !project.id) {
+                  console.warn('Skipping project with missing ID in explore:', project);
+                  return null;
+                }
+                
+                return (
                 <TouchableOpacity 
                   key={project.id} 
                   style={styles.projectCard}
-                  onPress={() => router.push(`/project/${project.id}`)}
+                  onPress={() => {
+                    console.log('Navigating to project from explore:', project.id);
+                    router.push(`/project/${project.id}`);
+                  }}
                 >
                   {/* Project Image */}
                   {project.project_image_url ? (
@@ -269,8 +415,23 @@ export default function ExploreScreen() {
                       {project.status === 'open' ? 'OPEN' : 'CLOSED'}
                     </ThemedText>
                   </View>
+                  
+                  {/* Match Badge - Show when sorted by match */}
+                  {sortByMatch && project.similarity_score !== undefined && (
+                    <View style={[styles.statusBadge, { 
+                      backgroundColor: Colors.accent,
+                      top: 40,  // Below the status badge
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                    }]}>
+                      <ThemedText style={styles.statusText}>
+                        ⭐ {Math.round(project.similarity_score * 100)}% Match
+                      </ThemedText>
+                    </View>
+                  )}
                 </TouchableOpacity>
-              ))}
+                );
+              })}
             </View>
           </View>
         )}
@@ -285,13 +446,67 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
   content: {
-    padding: 20,
+    padding: 16,
     paddingTop: 60,
     paddingBottom: 40,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: 20,
     alignItems: 'center',
+  },
+  searchContainer: {
+    position: 'relative',
+    marginBottom: 16,
+  },
+  searchInput: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    paddingRight: 45,
+    fontSize: 15,
+    color: Colors.text.primary,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  searchIcon: {
+    position: 'absolute',
+    right: 14,
+    top: 12,
+    fontSize: 20,
+  },
+  filterContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  filterButton: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  filterButtonActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text.secondary,
+  },
+  filterButtonTextActive: {
+    color: Colors.text.inverse,
+  },
+  filterHint: {
+    fontSize: 12,
+    color: Colors.text.tertiary,
+    fontStyle: 'italic',
+    marginLeft: 12,
+    flex: 1,
   },
   title: {
     fontSize: 32,
@@ -307,15 +522,15 @@ const styles = StyleSheet.create({
   },
   createButton: {
     backgroundColor: Colors.accent,
-    padding: 18,
-    borderRadius: 14,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 20,
     shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   createButtonText: {
     color: Colors.text.inverse,
@@ -404,21 +619,21 @@ const styles = StyleSheet.create({
   projectsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 16,
+    justifyContent: 'flex-start',
   },
   projectCard: {
     backgroundColor: Colors.surface,
-    borderRadius: 14,
-    width: '100%',
-    height: 280,
+    borderRadius: 12,
+    width: windowWidth > 768 ? (windowWidth - 120) / 4 : windowWidth > 480 ? (windowWidth - 90) / 3 : (windowWidth - 70) / 2, // 4 tiles on large, 3 on medium, 2 on small
+    aspectRatio: 1,
     shadowColor: Colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
-    shadowRadius: 7,
+    shadowRadius: 6,
     elevation: 3,
     overflow: 'hidden',
     position: 'relative',
-    marginBottom: 12,
   },
   projectImage: {
     width: '100%',
@@ -446,22 +661,22 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   projectTitle: {
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
-    lineHeight: 16,
+    lineHeight: 20,
   },
   statusBadge: {
     position: 'absolute',
-    top: 7,
-    right: 7,
-    paddingHorizontal: 7,
-    paddingVertical: 3.5,
-    borderRadius: 7,
+    top: 6,
+    right: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   statusText: {
     color: Colors.text.inverse,
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: '700',
     textTransform: 'uppercase',
   },

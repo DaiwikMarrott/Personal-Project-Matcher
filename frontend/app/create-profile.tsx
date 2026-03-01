@@ -29,6 +29,16 @@ const API_URL = Platform.OS === 'web'
 
 const EXPERIENCE_LEVELS = ['beginner', 'intermediate', 'advanced', 'expert'];
 
+const PROJECT_SIZES = ['small', 'medium', 'large'];
+const PROJECT_DURATIONS = ['short', 'medium', 'long'];
+const COLLABORATION_STYLES = [
+  'Remote - Async',
+  'Remote - Synchronous',
+  'In-Person',
+  'Hybrid',
+  'Flexible',
+];
+
 const MAJORS = [
   'Computer Science',
   'Software Engineering',
@@ -59,10 +69,19 @@ export default function CreateProfile() {
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<any>(null);
   
+  // New matching preference fields
+  const [availabilityHours, setAvailabilityHours] = useState('');
+  const [projectSize, setProjectSize] = useState('');
+  const [projectDuration, setProjectDuration] = useState('');
+  const [collaborationStyle, setCollaborationStyle] = useState('');
+  
   // UI state
   const [loading, setLoading] = useState(false);
   const [showMajorPicker, setShowMajorPicker] = useState(false);
   const [showExperiencePicker, setShowExperiencePicker] = useState(false);
+  const [showSizePicker, setShowSizePicker] = useState(false);
+  const [showDurationPicker, setShowDurationPicker] = useState(false);
+  const [showCollaborationPicker, setShowCollaborationPicker] = useState(false);
 
   // Request image permissions on mount
   React.useEffect(() => {
@@ -197,6 +216,11 @@ export default function CreateProfile() {
         interests: interests.trim() || null,
         urls: urls,
         profile_picture_url: profilePictureUrl,
+        // Matching preferences
+        availability_hours_per_week: availabilityHours ? parseInt(availabilityHours) : null,
+        project_size_preference: projectSize || null,
+        project_duration_preference: projectDuration || null,
+        collaboration_style: collaborationStyle || null,
       };
 
       const response = await fetch(`${API_URL}/profile`, {
@@ -376,6 +400,104 @@ export default function CreateProfile() {
         />
       </View>
 
+      {/* Matching Preferences */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Project Preferences (Optional)</Text>
+        <Text style={styles.sectionSubtitle}>Help us match you with the right projects</Text>
+
+        <Text style={styles.label}>Availability (hours per week)</Text>
+        <TextInput
+          style={styles.input}
+          value={availabilityHours}
+          onChangeText={setAvailabilityHours}
+          placeholder="e.g., 10"
+          placeholderTextColor="#999"
+          keyboardType="numeric"
+        />
+
+        <Text style={styles.label}>Preferred Project Size</Text>
+        <TouchableOpacity
+          style={styles.pickerButton}
+          onPress={() => setShowSizePicker(!showSizePicker)}
+        >
+          <Text style={projectSize ? styles.pickerText : styles.pickerPlaceholder}>
+            {projectSize ? projectSize.charAt(0).toUpperCase() + projectSize.slice(1) : 'Select project size'}
+          </Text>
+        </TouchableOpacity>
+        {showSizePicker && (
+          <ScrollView style={styles.pickerContainer} nestedScrollEnabled={true}>
+            {PROJECT_SIZES.map((size) => (
+              <TouchableOpacity
+                key={size}
+                style={styles.pickerItem}
+                onPress={() => {
+                  setProjectSize(size);
+                  setShowSizePicker(false);
+                }}
+              >
+                <Text style={styles.pickerItemText}>
+                  {size.charAt(0).toUpperCase() + size.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
+        <Text style={styles.label}>Preferred Project Duration</Text>
+        <TouchableOpacity
+          style={styles.pickerButton}
+          onPress={() => setShowDurationPicker(!showDurationPicker)}
+        >
+          <Text style={projectDuration ? styles.pickerText : styles.pickerPlaceholder}>
+            {projectDuration ? projectDuration.charAt(0).toUpperCase() + projectDuration.slice(1) + '-term' : 'Select duration'}
+          </Text>
+        </TouchableOpacity>
+        {showDurationPicker && (
+          <ScrollView style={styles.pickerContainer} nestedScrollEnabled={true}>
+            {PROJECT_DURATIONS.map((duration) => (
+              <TouchableOpacity
+                key={duration}
+                style={styles.pickerItem}
+                onPress={() => {
+                  setProjectDuration(duration);
+                  setShowDurationPicker(false);
+                }}
+              >
+                <Text style={styles.pickerItemText}>
+                  {duration.charAt(0).toUpperCase() + duration.slice(1)}-term
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+
+        <Text style={styles.label}>Collaboration Style</Text>
+        <TouchableOpacity
+          style={styles.pickerButton}
+          onPress={() => setShowCollaborationPicker(!showCollaborationPicker)}
+        >
+          <Text style={collaborationStyle ? styles.pickerText : styles.pickerPlaceholder}>
+            {collaborationStyle || 'Select collaboration style'}
+          </Text>
+        </TouchableOpacity>
+        {showCollaborationPicker && (
+          <ScrollView style={styles.pickerContainer} nestedScrollEnabled={true}>
+            {COLLABORATION_STYLES.map((style) => (
+              <TouchableOpacity
+                key={style}
+                style={styles.pickerItem}
+                onPress={() => {
+                  setCollaborationStyle(style);
+                  setShowCollaborationPicker(false);
+                }}
+              >
+                <Text style={styles.pickerItemText}>{style}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+
       {/* Submit Button */}
       <TouchableOpacity
         style={[styles.submitButton, loading && styles.submitButtonDisabled]}
@@ -476,6 +598,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text.primary,
     marginBottom: 16,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    marginBottom: 12,
+    marginTop: -8,
   },
   label: {
     fontSize: 14,

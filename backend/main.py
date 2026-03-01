@@ -13,7 +13,7 @@ import google.generativeai as genai
 import base64
 import mimetypes
 
-from ai_service import generate_project_roadmap, generate_embedding
+from ai_service import generate_project_roadmap, generate_embedding, generate_profile_summary, generate_project_summary
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -73,6 +73,11 @@ class ProfileCreate(BaseModel):
     availability: Optional[Dict[str, Any]] = {}
     urls: Optional[Dict[str, str]] = {}
     profile_picture_url: Optional[str] = None
+    # New matching preference fields
+    availability_hours_per_week: Optional[int] = None
+    project_size_preference: Optional[str] = None  # small, medium, large
+    project_duration_preference: Optional[str] = None  # short, medium, long
+    collaboration_style: Optional[str] = None
 
 
 class ProfileResponse(BaseModel):
@@ -87,6 +92,12 @@ class ProfileResponse(BaseModel):
     interests: Optional[str]
     availability: Optional[Dict[str, Any]]
     urls: Optional[Dict[str, str]]
+    # New matching preference fields
+    availability_hours_per_week: Optional[int] = None
+    project_size_preference: Optional[str] = None
+    project_duration_preference: Optional[str] = None
+    collaboration_style: Optional[str] = None
+    profile_ai_summary: Optional[str] = None
 
 
 class ProjectCreate(BaseModel):
@@ -110,6 +121,8 @@ class ProjectResponse(BaseModel):
     project_image_url: Optional[str] = None
     roadmap: Optional[Dict[str, Any]] = None
     status: Optional[str] = 'open'
+    project_ai_summary: Optional[str] = None
+    similarity_score: Optional[float] = None  # For match results
 
 
 class MatchRequest(BaseModel):
@@ -248,16 +261,23 @@ async def create_profile(profile: ProfileCreate):
                 detail="Profile already exists for this user"
             )
         
-        # Generate bio text for embedding
-        bio_text = f"{profile.major or ''} {profile.interests or ''} {' '.join(profile.skills or [])}".strip()
+        # Step 1: Generate AI summary for matching (this captures the essence of the profile)
+        logger.info("Generating AI summary for profile...")
+        profile_dict = profile.dict()
+        ai_summary = await generate_profile_summary(profile_dict)
+        logger.info(f"AI Summary generated: {ai_summary[:100]}...")
         
-        # Generate embedding using Gemini
-        bio_embedding = await generate_embedding(bio_text) if bio_text else None
+        # Step 2: Generate embedding FROM the AI summary (not raw text)
+        logger.info("Generating embedding from AI summary...")
+        bio_embedding = await generate_embedding(ai_summary) if ai_summary else None
+        logger.info(f"Embedding generated with {len(bio_embedding) if bio_embedding else 0} dimensions")
         
         # Insert into Supabase
-        data = profile.dict()
+        data = profile_dict
         if bio_embedding:
             data['bio_embedding'] = bio_embedding
+        if ai_summary:
+            data['profile_ai_summary'] = ai_summary
         
         response = supabase.table("profiles").insert(data).execute()
         
@@ -307,20 +327,28 @@ async def create_project(project: ProjectCreate):
         actual_profile_id = profile_response.data[0]['id']
         logger.info(f"Resolved profile.id: {actual_profile_id}")
         
-        # Generate project roadmap using Gemini
+        # Step 1: Generate project roadmap using Gemini
         logger.info("Generating AI roadmap...")
         roadmap = await generate_project_roadmap(project.title, project.description)
         
-        # Generate embedding for semantic matching
-        logger.info("Generating embeddings...")
-        project_text = f"{project.title} {project.description} {' '.join(project.tags or [])}".strip()
-        project_embedding = await generate_embedding(project_text)
+        # Step 2: Generate AI summary for matching (this captures project essence and requirements)
+        logger.info("Generating AI summary...")
+        project_dict = project.dict()
+        project_dict['roadmap'] = roadmap  # Include roadmap in summary generation
+        ai_summary = await generate_project_summary(project_dict)
+        logger.info(f"AI Summary generated: {ai_summary[:100]}...")
+        
+        # Step 3: Generate embedding FROM the AI summary (not raw text)
+        logger.info("Generating embedding from AI summary...")
+        project_embedding = await generate_embedding(ai_summary) if ai_summary else None
+        logger.info(f"Embedding generated with {len(project_embedding) if project_embedding else 0} dimensions")
         
         # Insert into Supabase with the actual profile.id
         data = project.dict()
         data['owner_id'] = actual_profile_id  # Use the resolved profile.id
         data['roadmap'] = roadmap
         data['project_embedding'] = project_embedding
+        data['project_ai_summary'] = ai_summary
         data['status'] = 'open'
         
         logger.info("Inserting project into database...")
@@ -400,6 +428,59 @@ async def find_matches(match_request: MatchRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error finding matches: {str(e)}"
         )
+
+
+# Get Recommended Projects for User
+@app.get("/recommended-projects/{profile_id}")
+async def get_recommended_projects(profile_id: str, limit: int = 10):
+    """
+    Get top recommended projects for a user based on their profile.
+    Returns open projects sorted by match score (highest first).
+    """
+    try:
+        logger.info(f"Getting recommended projects for profile {profile_id}")
+        
+        # Check if RPC function exists, otherwise fall back to simple query
+        try:
+            # Use the existing RPC function to find matching projects
+            response = supabase.rpc(
+                "match_projects_to_profile",
+                {
+                    "profile_uuid": profile_id,
+                    "match_threshold": 0.0,  # Get all projects, we'll sort by score
+                    "match_limit": limit * 2  # Get more to filter
+                }
+            ).execute()
+            
+            projects = response.data or []
+            logger.info(f"RPC returned {len(projects)} projects")
+            
+        except Exception as rpc_error:
+            logger.warning(f"RPC function failed, falling back to simple query: {str(rpc_error)}")
+            # Fallback: Just get all open projects
+            response = supabase.table("projects").select("*").eq("status", "open").limit(limit).execute()
+            projects = response.data or []
+            # Add empty similarity scores   
+            projects = [{ **p, 'similarity': 0.0 } for p in projects]
+        
+        # Filter for only open projects and sort by similarity score
+        open_projects = [p for p in projects if p.get('status') == 'open' and p.get('id')]
+        open_projects.sort(key=lambda x: x.get('similarity', 0), reverse=True)
+        
+        logger.info(f"Returning {len(open_projects[:limit])} recommended projects")
+        
+        return {
+            "profile_id": profile_id,
+            "recommended_projects": open_projects[:limit]
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting recommended projects: {str(e)}")
+        # Return empty list instead of failing
+        return {
+            "profile_id": profile_id,
+            "recommended_projects": []
+        }
 
 
 # Get Profile by ID

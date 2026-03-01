@@ -11,7 +11,8 @@ import {
   TextInput,
   ActivityIndicator,
   Platform,
-  Image
+  Image,
+  Dimensions
 } from 'react-native';
 import { useState, useEffect } from 'react';
 import { ThemedText } from '@/components/themed-text';
@@ -19,6 +20,8 @@ import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
+
+const windowWidth = Dimensions.get('window').width;
 
 const API_URL = Platform.OS === 'web' 
   ? 'http://localhost:8000' 
@@ -45,6 +48,7 @@ export default function HomeScreen() {
   });
   const [openProjects, setOpenProjects] = useState<any[]>([]);
   const [closedProjects, setClosedProjects] = useState<any[]>([]);
+  const [recommendedProjects, setRecommendedProjects] = useState<any[]>([]);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
 
   // Check if user has a profile ONLY after signup
@@ -134,6 +138,32 @@ export default function HomeScreen() {
           projectsJoined: 0,  // You can track this in the database
           matchesFound: allProjects.length - userProjects.length,
         });
+      }
+
+      // Load recommended projects based on profile
+      if (userProfile?.id) {
+        try {
+          console.log('Fetching recommended projects for profile:', userProfile.id);
+          const recommendedResponse = await fetch(`${API_URL}/recommended-projects/${userProfile.id}?limit=6`);
+          if (recommendedResponse.ok) {
+            const recommendedData = await recommendedResponse.json();
+            console.log('Recommended projects response:', recommendedData);
+            const projects = recommendedData.recommended_projects || [];
+            // Filter out any projects with missing IDs
+            const validProjects = projects.filter((p: any) => p && p.id);
+            console.log('Valid recommended projects:', validProjects.length);
+            // Log similarity scores for debugging
+            validProjects.forEach((p: any, idx: number) => {
+              console.log(`Project ${idx + 1}: ${p.title} - Similarity: ${p.similarity}`);
+            });
+            setRecommendedProjects(validProjects);
+          } else {
+            console.error('Failed to fetch recommended projects:', recommendedResponse.status);
+          }
+        } catch (err) {
+          console.error('Error loading recommended projects:', err);
+          // Don't fail the whole dashboard if recommendations fail
+        }
       }
     } catch (error) {
       console.error('Error loading dashboard:', error);
@@ -253,6 +283,73 @@ export default function HomeScreen() {
             </View>
           </View>
 
+          {/* Recommended Projects */}
+          {recommendedProjects.length > 0 && (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <ThemedText style={styles.sectionTitle}>Recommended For You</ThemedText>
+                <TouchableOpacity onPress={() => router.push('/explore')}>
+                  <ThemedText style={styles.seeAll}>See All</ThemedText>
+                </TouchableOpacity>
+              </View>
+              
+              {loadingDashboard ? (
+                <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 20 }} />
+              ) : (
+                recommendedProjects.slice(0, 3).map((project) => (
+                  <TouchableOpacity 
+                    key={project.id}
+                    style={styles.projectCard}
+                    onPress={() => router.push(`/project/${project.id}`)}
+                  >
+                    {/* Project Image */}
+                    {project.project_image_url ? (
+                      <Image 
+                        source={{ uri: project.project_image_url }} 
+                        style={styles.projectImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.projectImagePlaceholder}>
+                        <ThemedText style={styles.projectImageEmoji}>💡</ThemedText>
+                      </View>
+                    )}
+                    
+                    <View style={styles.projectHeader}>
+                      <ThemedText style={styles.projectTitle} numberOfLines={1}>
+                        {project.title}
+                      </ThemedText>
+                      <View style={styles.statusActions}>
+                        <View style={[styles.statusBadge, { backgroundColor: Colors.status.open }]}>
+                          <ThemedText style={styles.statusText}>OPEN</ThemedText>
+                        </View>
+                        {project.similarity !== undefined && (
+                          <View style={[styles.statusBadge, { backgroundColor: Colors.accent, marginLeft: 4 }]}>
+                            <ThemedText style={styles.statusText}>
+                              ⭐ {Math.round(project.similarity * 100)}% Match
+                            </ThemedText>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                    <ThemedText style={styles.projectDescription} numberOfLines={2}>
+                      {project.description}
+                    </ThemedText>
+                    {project.tags && project.tags.length > 0 && (
+                      <View style={styles.tagsContainer}>
+                        {project.tags.slice(0, 3).map((tag: string, index: number) => (
+                          <View key={index} style={styles.tag}>
+                            <ThemedText style={styles.tagText}>{tag}</ThemedText>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
+          )}
+
           {/* Open Projects */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -265,7 +362,9 @@ export default function HomeScreen() {
             {loadingDashboard ? (
               <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 20 }} />
             ) : openProjects.length > 0 ? (
-              openProjects.map((project) => (
+              openProjects.map((project) => {
+                if (!project || !project.id) return null;
+                return (
                 <TouchableOpacity 
                   key={project.id}
                   style={styles.projectCard}
@@ -316,7 +415,8 @@ export default function HomeScreen() {
                     </View>
                   )}
                 </TouchableOpacity>
-              ))
+                );
+              })
             ) : (
               <View style={styles.emptyState}>
                 <ThemedText style={styles.emptyText}>No open projects</ThemedText>
@@ -333,7 +433,9 @@ export default function HomeScreen() {
                 <ThemedText style={styles.completedCount}>({closedProjects.length})</ThemedText>
               </View>
               
-              {closedProjects.slice(0, 3).map((project) => (
+              {closedProjects.slice(0, 3).map((project) => {
+                if (!project || !project.id) return null;
+                return (
                 <TouchableOpacity 
                   key={project.id}
                   style={[styles.projectCard, styles.closedProjectCard]}
@@ -375,7 +477,8 @@ export default function HomeScreen() {
                     {project.description}
                   </ThemedText>
                 </TouchableOpacity>
-              ))}
+                );
+              })}
             </View>
           )}
 
@@ -558,10 +661,6 @@ const styles = StyleSheet.create({
     color: Colors.text.tertiary,
     fontWeight: '500',
   },
-  closedProjectCard: {
-    opacity: 0.8,
-    borderColor: Colors.border.medium,
-  },
   
   // Stats Cards
   statsContainer: {
@@ -609,6 +708,125 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.text.primary,
   },
+  
+  // Project Cards
+  projectCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 0,
+    marginBottom: 16,
+    shadowColor: Colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+    overflow: 'hidden',
+    maxWidth: 500,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  closedProjectCard: {
+    opacity: 0.8,
+  },
+  projectImage: {
+    width: '100%',
+    height: 140,
+  },
+  projectImagePlaceholder: {
+    width: '100%',
+    height: 140,
+    backgroundColor: Colors.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  projectImageEmoji: {
+    fontSize: 48,
+    opacity: 0.6,
+  },
+  projectHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    paddingBottom: 8,
+  },
+  projectTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.text.primary,
+    flex: 1,
+    marginRight: 12,
+  },
+  statusActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusText: {
+    color: Colors.text.inverse,
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  closeButton: {
+    backgroundColor: Colors.error,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  closeButtonText: {
+    color: Colors.text.inverse,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  reopenButton: {
+    backgroundColor: Colors.success,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  reopenButtonText: {
+    color: Colors.text.inverse,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  projectDescription: {
+    fontSize: 14,
+    color: Colors.text.secondary,
+    lineHeight: 20,
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  tagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+  tag: {
+    backgroundColor: Colors.backgroundSecondary,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border.light,
+  },
+  tagText: {
+    fontSize: 12,
+    color: Colors.text.secondary,
+    fontWeight: '500',
+  },
+  completedCount: {
+    fontSize: 16,
+    color: Colors.text.tertiary,
+    fontWeight: '500',
+  },
   seeAll: {
     fontSize: 14,
     color: Colors.primary,
@@ -650,120 +868,104 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   
-  // Project Cards
-  projectCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
-    overflow: 'hidden',
-  },
-  projectImage: {
-    width: '100%',
-    height: 140,
-    marginLeft: -16,
-    marginRight: -16,
-    marginTop: -16,
-    marginBottom: 12,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-  },
-  projectImagePlaceholder: {
-    width: '100%',
-    height: 140,
-    marginLeft: -16,
-    marginRight: -16,
-    marginTop: -16,
-    marginBottom: 12,
-    backgroundColor: Colors.backgroundSecondary,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border.light,
-  },
-  projectImageEmoji: {
-    fontSize: 48,
-  },
-  projectHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  projectTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    flex: 1,
-    marginRight: 8,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: Colors.text.inverse,
-    textTransform: 'capitalize',
-  },
-  statusActions: {
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  closeButton: {
-    backgroundColor: Colors.error,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  closeButtonText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.text.inverse,
-    textTransform: 'uppercase',
-  },
-  reopenButton: {
-    backgroundColor: Colors.success,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  reopenButtonText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.text.inverse,
-    textTransform: 'uppercase',
-  },
-  projectDescription: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    lineHeight: 20,
-    marginBottom: 12,
-  },
-  tagsContainer: {
+  // Project Grid & Tiles
+  projectsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 10,
+    justifyContent: 'flex-start',
   },
-  tag: {
-    backgroundColor: Colors.accentLight,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  projectTile: {
+    backgroundColor: Colors.surface,
     borderRadius: 12,
+    width: windowWidth > 768 ? (windowWidth - 100) / 4 : windowWidth > 480 ? (windowWidth - 80) / 3 : (windowWidth - 70) / 2,
+    aspectRatio: 1,
+    shadowColor: Colors.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  tagText: {
+  closedTile: {
+    opacity: 0.8,
+  },
+  tileImage: {
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
+  },
+  tileImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: Colors.surfaceLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+  },
+  tileImageEmoji: {
+    fontSize: 40,
+    opacity: 0.6,
+  },
+  tileTitleContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    padding: 8,
+  },
+  tileTitle: {
     fontSize: 12,
-    color: Colors.primaryDark,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    lineHeight: 15,
+  },
+  tileStatusBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  tileStatusText: {
+    color: Colors.text.inverse,
+    fontSize: 9,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  tileActions: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+  },
+  tileCloseButton: {
+    backgroundColor: Colors.error,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tileReopenButton: {
+    backgroundColor: Colors.success,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tileActionText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.text.inverse,
+    lineHeight: 16,
+  },
+  completedCount: {
+    fontSize: 16,
+    color: Colors.text.tertiary,
     fontWeight: '500',
   },
   

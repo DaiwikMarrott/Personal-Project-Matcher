@@ -63,8 +63,8 @@ Return ONLY valid JSON, no markdown formatting or explanations.
 """
         
         # Use Gemini to generate the roadmap
-        # Using gemini-1.5-pro - reliable production model
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        # Using gemini-flash-latest - reliable production model
+        model = genai.GenerativeModel('models/gemini-flash-latest')
         response = model.generate_content(prompt)
         
         # Parse the response
@@ -130,10 +130,11 @@ async def generate_embedding(text: str) -> List[float]:
             return [0.0] * 768
         
         # Use Gemini's embedding model
-        # embedding-001 (768 dimensions) - supports retrieval_document task type
+        # gemini-embedding-001 (768 dimensions)
         result = genai.embed_content(
-            model="models/text-embedding-004",
-            content=text
+            model="models/gemini-embedding-001",
+            content=text,
+            task_type="retrieval_document"
         )
         
         embedding = result['embedding']
@@ -203,3 +204,114 @@ Use high-energy language. Be enthusiastic but authentic.
             return "Your profile is so generic, it could be anyone. Spice it up!"
         else:
             return "This project is incredible! Join the team and build something amazing!"
+
+
+async def generate_profile_summary(profile_data: Dict[str, Any]) -> str:
+    """
+    Generate an AI summary/understanding of a user profile for matching purposes.
+    This summary captures the essence of the user's skills, interests, and preferences.
+    
+    Args:
+        profile_data: Dictionary containing profile information
+    
+    Returns:
+        A concise AI-generated summary of the profile
+    """
+    try:
+        # Build profile text
+        profile_parts = []
+        if profile_data.get('major'):
+            profile_parts.append(f"Major: {profile_data['major']}")
+        if profile_data.get('experience_level'):
+            profile_parts.append(f"Experience: {profile_data['experience_level']}")
+        if profile_data.get('skills'):
+            profile_parts.append(f"Skills: {', '.join(profile_data['skills'])}")
+        if profile_data.get('interests'):
+            profile_parts.append(f"Interests: {profile_data['interests']}")
+        if profile_data.get('availability_hours_per_week'):
+            profile_parts.append(f"Available {profile_data['availability_hours_per_week']} hours/week")
+        if profile_data.get('project_size_preference'):
+            profile_parts.append(f"Prefers {profile_data['project_size_preference']} projects")
+        if profile_data.get('project_duration_preference'):
+            profile_parts.append(f"Looking for {profile_data['project_duration_preference']}-term projects")
+        if profile_data.get('collaboration_style'):
+            profile_parts.append(f"Collaboration style: {profile_data['collaboration_style']}")
+        
+        profile_text = ". ".join(profile_parts)
+        
+        if not profile_text:
+            return "User seeking collaboration opportunities"
+        
+        prompt = f"""
+Analyze this user profile and create a concise 2-3 sentence summary that captures their technical background, interests, and project preferences. Focus on what types of projects would be a good match.
+
+Profile: {profile_text}
+
+Write a natural, descriptive summary that will help match them with relevant projects. Focus on their strengths and what they're looking for.
+"""
+        
+        model = genai.GenerativeModel('models/gemini-flash-latest')
+        response = model.generate_content(prompt)
+        
+        return response.text.strip()
+    
+    except Exception as e:
+        print(f"Error generating profile summary: {e}")
+        return profile_text if profile_text else "User seeking collaboration opportunities"
+
+
+async def generate_project_summary(project_data: Dict[str, Any]) -> str:
+    """
+    Generate an AI summary/understanding of a project for matching purposes.
+    This summary captures the essence of the project and what kind of collaborators it needs.
+    
+    Args:
+        project_data: Dictionary containing project information
+    
+    Returns:
+        A concise AI-generated summary of the project
+    """
+    try:
+        # Build project text
+        project_parts = [
+            f"Title: {project_data.get('title', 'Untitled')}",
+            f"Description: {project_data.get('description', '')}"
+        ]
+        
+        if project_data.get('tags'):
+            project_parts.append(f"Tags: {', '.join(project_data['tags'])}")
+        if project_data.get('duration'):
+            project_parts.append(f"Duration: {project_data['duration']}")
+        if project_data.get('availability_needed'):
+            project_parts.append(f"Time commitment: {project_data['availability_needed']}")
+        
+        # Include roadmap difficulty if available
+        if project_data.get('roadmap') and project_data['roadmap'].get('difficulty'):
+            project_parts.append(f"Difficulty: {project_data['roadmap']['difficulty']}")
+        if project_data.get('roadmap') and project_data['roadmap'].get('recommended_stack'):
+            stack = project_data['roadmap']['recommended_stack']
+            tech_list = []
+            for category, techs in stack.items():
+                if techs:
+                    tech_list.extend(techs)
+            if tech_list:
+                project_parts.append(f"Tech stack: {', '.join(tech_list[:5])}")
+        
+        project_text = ". ".join(project_parts)
+        
+        prompt = f"""
+Analyze this project and create a concise 2-3 sentence summary that captures what the project is about, what skills are needed, and what type of collaborator would be a good fit.
+
+Project: {project_text}
+
+Write a natural, descriptive summary that will help match this project with the right collaborators. Focus on the project's goals and requirements.
+"""
+        
+        model = genai.GenerativeModel('models/gemini-flash-latest')
+        response = model.generate_content(prompt)
+        
+        return response.text.strip()
+    
+    except Exception as e:
+        print(f"Error generating project summary: {e}")
+        return project_text if project_text else "Project seeking collaborators"

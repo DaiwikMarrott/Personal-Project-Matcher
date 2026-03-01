@@ -1,0 +1,884 @@
+================================================================================
+       AI-POWERED PROJECT MATCHING SYSTEM - COMPLETE DOCUMENTATION
+================================================================================
+
+Last Updated: February 28, 2026
+Project: Personal Project Matcher (Mountain Madness 2026 Hackathon)
+
+================================================================================
+1. SYSTEM OVERVIEW
+================================================================================
+
+This system uses Google Gemini AI to match user profiles with projects based on
+semantic understanding, not just keyword matching. It generates AI summaries of
+both profiles and projects, creates embeddings (vector representations), and
+uses cosine similarity to calculate match scores.
+
+KEY FEATURES:
+✓ AI-generated summaries for profiles and projects (2-3 sentences each)
+✓ Vector embeddings created from AI summaries (768 dimensions)
+✓ Cosine similarity matching (returns 0-1 score, displayed as percentage)
+✓ Recommended projects on dashboard (top 3 matches)
+✓ Explore page with "Sort by Match" toggle
+✓ Random project order when NOT sorted by match
+✓ Match percentage badges visible on both pages
+
+
+================================================================================
+2. USER REQUIREMENTS (FROM CONVERSATION)
+================================================================================
+
+ORIGINAL REQUEST:
+"Now lets create the matching algorithm. Add in recommended projects on the home
+page based on the matching score. With this also add a sort by match on the 
+project explore page so the matching projects are on top."
+
+CLARIFICATIONS:
+- "Full profile, with understanding of the project through its description and
+  how it would relate with the user profile"
+- "You can add a small AI understanding for each project and each profile so we
+  dont have to ai analyze each time"
+- "Replace the filter and only show open projects on the explore page"
+- "I need each project and profile to have an AI summary/description defining
+  the project/profile as one of the fields"
+- "Make sure that there is randomisation of the see all before i hit the button
+  to sort them using the algo we developed"
+- "The scores should be visible"
+
+
+================================================================================
+3. COMPLETE SYSTEM ARCHITECTURE
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              USER INTERFACE                                  │
+│  ┌──────────────────────┐              ┌──────────────────────────────┐    │
+│  │   Dashboard (Home)   │              │   Explore Page               │    │
+│  │  - Your Projects     │              │  - All Open Projects         │    │
+│  │  - Recommended (Top 3)│◄────────┐   │  - Search Bar                │    │
+│  │  - Match % Badges    │          │   │  - "Sort by Match" Toggle    │    │
+│  └──────────────────────┘          │   │  - Match % Badges            │    │
+│                                    │   │  - Random order (default)    │    │
+│                                    │   └──────────────────────────────┘    │
+└────────────────────────────────────┼─────────────────────────────────────┬──┘
+                                     │                                     │
+                                     │  API CALLS                         │
+                                     │                                     │
+┌────────────────────────────────────▼─────────────────────────────────────▼──┐
+│                           BACKEND API (FastAPI)                             │
+│                                                                              │
+│  Endpoints:                                                                  │
+│  • POST   /profile              → Create profile + generate AI summary      │
+│  • POST   /project              → Create project + generate AI summary      │
+│  • GET    /recommended-projects/{profile_id}                                │
+│           → Uses RPC function to get matched projects                       │
+│  • GET    /projects?project_status=open                                     │
+│           → Returns all open projects (for default/random view)             │
+│                                                                              │
+│  AI Service Functions:                                                      │
+│  • generate_profile_summary()   → Creates 2-3 sentence profile summary     │
+│  • generate_project_summary()   → Creates 2-3 sentence project summary     │
+│  • generate_embedding()         → Converts summary to 768D vector          │
+│                                                                              │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       │  Database Operations
+                                       │
+┌──────────────────────────────────────▼──────────────────────────────────────┐
+│                        SUPABASE POSTGRESQL DATABASE                          │
+│                                                                              │
+│  profiles table:                                                             │
+│  • id, first_name, last_name, email, major, skills, interests              │
+│  • experience_level, availability_hours_per_week                            │
+│  • project_size_preference, project_duration_preference                     │
+│  • collaboration_style                                                      │
+│  • profile_ai_summary        ← AI-generated summary (TEXT)                 │
+│  • bio_embedding             ← 768D vector (VECTOR(768))                   │
+│                                                                              │
+│  projects table:                                                             │
+│  • id, title, description, tags, status, duration                           │
+│  • availability_needed, roadmap (JSONB)                                     │
+│  • project_ai_summary        ← AI-generated summary (TEXT)                 │
+│  • project_embedding         ← 768D vector (VECTOR(768))                   │
+│                                                                              │
+│  RPC Function: match_projects_to_profile(profile_uuid, threshold, limit)   │
+│  • Calculates cosine similarity between profile and project embeddings     │
+│  • Returns projects sorted by similarity score (0.0 to 1.0)                │
+│  • Filters for status='open' only                                           │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+================================================================================
+4. DATA FLOW: PROFILE CREATION
+================================================================================
+
+USER CREATES PROFILE
+     │
+     ├──► 1. Frontend collects data (name, email, major, skills, etc.)
+     │
+     ├──► 2. POST request to /profile endpoint
+     │
+     ├──► 3. Backend: generate_profile_summary()
+     │         Input: {major, skills, interests, experience_level, preferences}
+     │         Uses: Google Gemini (gemini-flash-latest model)
+     │         Output: "This intermediate-level developer bridges the gap 
+     │                  between modern web development and AI/ML, bringing 
+     │                  Python, JavaScript, and React expertise..."
+     │
+     ├──► 4. Backend: generate_embedding(ai_summary)
+     │         Input: AI summary text
+     │         Uses: Google Gemini Embedding (gemini-embedding-001)
+     │         Output: [0.015, -0.023, 0.008, ...] (768 numbers)
+     │
+     ├──► 5. Store in database:
+     │         • profile_ai_summary = AI text
+     │         • bio_embedding = 768D vector
+     │
+     └──► 6. Profile ready for matching!
+
+
+================================================================================
+5. DATA FLOW: PROJECT CREATION
+================================================================================
+
+USER CREATES PROJECT
+     │
+     ├──► 1. Frontend collects data (title, description, tags, etc.)
+     │
+     ├──► 2. POST request to /project endpoint
+     │
+     ├──► 3. Backend: generate_project_roadmap()
+     │         Creates structured roadmap (frontend, backend, database tasks)
+     │
+     ├──► 4. Backend: generate_project_summary()
+     │         Input: {title, description, tags, duration, roadmap}
+     │         Uses: Google Gemini (gemini-flash-latest model)
+     │         Output: "This mobile platform aims to enhance campus life by
+     │                  enabling students to discover and engage with events..."
+     │
+     ├──► 5. Backend: generate_embedding(ai_summary)
+     │         Input: AI summary text
+     │         Output: [0.012, -0.031, 0.019, ...] (768 numbers)
+     │
+     ├──► 6. Store in database:
+     │         • project_ai_summary = AI text
+     │         • project_embedding = 768D vector
+     │
+     └──► 7. Project ready for matching!
+
+
+================================================================================
+6. DATA FLOW: MATCHING ALGORITHM (EXPLORE PAGE - SORT BY MATCH)
+================================================================================
+
+USER CLICKS "SORT BY MATCH" BUTTON
+     │
+     ├──► 1. Frontend: fetchProjects() called with sortByMatch=true
+     │
+     ├──► 2. API Call: GET /recommended-projects/{profile_id}?limit=50
+     │
+     ├──► 3. Backend: Calls Supabase RPC function
+     │         Function: match_projects_to_profile(profile_uuid, 0.0, 50)
+     │
+     ├──► 4. Database RPC Function Executes:
+     │         
+     │         SELECT 
+     │             proj.id,
+     │             proj.title,
+     │             ... (all project fields)
+     │             1 - (proj.project_embedding <=> 
+     │                  profile.bio_embedding) AS similarity
+     │         FROM projects proj
+     │         WHERE proj.project_embedding IS NOT NULL
+     │             AND proj.status = 'open'
+     │         ORDER BY similarity DESC
+     │         LIMIT 50
+     │
+     │         The <=> operator calculates cosine DISTANCE (0 = identical)
+     │         We use 1 - distance to get SIMILARITY (1 = perfect match)
+     │
+     ├──► 5. Backend returns:
+     │         {
+     │           "profile_id": "uuid",
+     │           "recommended_projects": [
+     │             {
+     │               "id": "...",
+     │               "title": "AI Study Assistant",
+     │               "description": "...",
+     │               "similarity": 0.873,  ← 87.3% match!
+     │               ...
+     │             },
+     │             ...
+     │           ]
+     │         }
+     │
+     ├──► 6. Frontend: Maps similarity to similarity_score
+     │         project.similarity_score = project.similarity
+     │
+     ├──► 7. Frontend: Displays projects with match badges
+     │         "⭐ 87% Match" badge on each tile
+     │
+     └──► 8. User sees projects sorted by relevance!
+
+
+================================================================================
+7. DATA FLOW: DEFAULT VIEW (EXPLORE PAGE - WITHOUT SORT)
+================================================================================
+
+USER VIEWS EXPLORE PAGE (SORT BY MATCH = OFF)
+     │
+     ├──► 1. Frontend: fetchProjects() called with sortByMatch=false
+     │
+     ├──► 2. API Call: GET /projects?project_status=open&limit=100
+     │
+     ├──► 3. Backend: Returns all open projects (no matching)
+     │         {
+     │           "projects": [
+     │             { "id": "...", "title": "Project A", ... },
+     │             { "id": "...", "title": "Project B", ... },
+     │             ...
+     │           ],
+     │           "count": 9
+     │         }
+     │
+     ├──► 4. Frontend: RANDOMIZES project order
+     │         allProjects.sort(() => Math.random() - 0.5)
+     │         This ensures different order each time!
+     │
+     ├──► 5. Frontend: Displays projects WITHOUT match badges
+     │         (similarity_score is undefined)
+     │
+     └──► 6. User sees random project order
+
+
+================================================================================
+8. DATA FLOW: DASHBOARD RECOMMENDATIONS
+================================================================================
+
+USER OPENS DASHBOARD (HOME PAGE)
+     │
+     ├──► 1. Frontend: loadDashboard() executes
+     │
+     ├──► 2. API Call: GET /recommended-projects/{profile_id}?limit=6
+     │         (Same matching logic as explore page)
+     │
+     ├──► 3. Backend: Returns top 6 matched projects
+     │
+     ├──► 4. Frontend: Takes first 3 projects for display
+     │         Shows in "Recommended For You" section
+     │
+     ├──► 5. Frontend: Displays with match badges
+     │         Each tile shows: "⭐ 92% Match"
+     │
+     └──► 6. User sees their top 3 project recommendations!
+
+
+================================================================================
+9. FILE-BY-FILE BREAKDOWN
+================================================================================
+
+─────────────────────────────────────────────────────────────────────────────
+BACKEND FILES
+─────────────────────────────────────────────────────────────────────────────
+
+📄 backend/main.py
+─────────────────────────────────────────────────────────────────────────────
+PURPOSE: Main API server with all endpoints
+
+KEY SECTIONS:
+
+• POST /profile (Lines ~247-298)
+  - Receives profile data from frontend
+  - Calls generate_profile_summary() to create AI summary
+  - Calls generate_embedding(ai_summary) to create vector
+  - Stores both profile_ai_summary and bio_embedding in database
+  - Returns created profile
+
+• POST /project (Lines ~303-375)
+  - Receives project data from frontend
+  - Generates roadmap with generate_project_roadmap()
+  - Calls generate_project_summary() to create AI summary
+  - Calls generate_embedding(ai_summary) to create vector
+  - Stores both project_ai_summary and project_embedding in database
+  - Returns created project
+
+• GET /recommended-projects/{profile_id} (Lines ~430-480)
+  - Primary matching endpoint!
+  - Calls Supabase RPC: match_projects_to_profile()
+  - Parameters: profile_uuid, match_threshold=0.0, match_limit
+  - Returns projects sorted by similarity score (highest first)
+  - Has fallback: if RPC fails, returns all open projects with 0 similarity
+  - Logs: "RPC returned X projects"
+
+• GET /projects (Lines ~380-428)
+  - Fetches all projects (with optional status filter)
+  - Used for default/random view on explore page
+  - query params: project_status=open&limit=100
+  - Returns: {"projects": [...], "count": N}
+
+IMPORTANT NOTES:
+• AI summaries are generated ONCE during creation
+• Embeddings are generated FROM the AI summaries (not raw text)
+• This makes matching fast (no AI calls during matching)
+
+
+📄 backend/ai_service.py
+─────────────────────────────────────────────────────────────────────────────
+PURPOSE: All AI-related functions using Google Gemini
+
+KEY FUNCTIONS:
+
+• generate_profile_summary(profile_data) → str (Lines ~208-260)
+  INPUT: Dictionary with profile fields
+  PROCESS:
+    1. Builds text: "Major: CS. Experience: intermediate. Skills: Python..."
+    2. Sends to Gemini with prompt asking for 2-3 sentence summary
+    3. Prompt: "Analyze this user profile and create a concise summary..."
+  MODEL: gemini-flash-latest
+  OUTPUT: "This intermediate developer brings strong technical foundation..."
+  FALLBACK: If AI fails, returns the constructed text directly
+
+• generate_project_summary(project_data) → str (Lines ~263-318)
+  INPUT: Dictionary with project fields (includes roadmap)
+  PROCESS:
+    1. Builds text: "Title: X. Description: Y. Tags: Z. Tech: A, B, C..."
+    2. Sends to Gemini asking for project requirements summary
+    3. Prompt: "Analyze this project and create summary of goals/skills..."
+  MODEL: gemini-flash-latest
+  OUTPUT: "This mobile platform aims to enhance campus life by enabling..."
+  FALLBACK: If AI fails, returns the constructed text
+
+• generate_embedding(text) → List[float] (Lines ~121-153)
+  INPUT: Text string (usually AI summary)
+  PROCESS:
+    1. Calls Google Gemini embedding API
+    2. Ensures exactly 768 dimensions (pads or truncates if needed)
+  MODEL: gemini-embedding-001
+  OUTPUT: List of 768 floating point numbers, e.g., [0.015, -0.023, ...]
+  FALLBACK: If fails, returns zero vector [0.0] * 768
+
+• generate_project_roadmap(title, description) → Dict (Lines ~17-116)
+  INPUT: Project title and description
+  OUTPUT: JSON with frontend/backend/database/deployment tasks
+  MODEL: gemini-flash-latest
+  NOTE: Not used for matching, just for project planning
+
+WHY THIS APPROACH?
+• Generate summaries once → Store them
+• Create embeddings once → Store them
+• Matching is FAST (just vector math, no AI calls)
+• Summaries give human-readable understanding
+• Embeddings enable semantic similarity
+
+
+📄 backend/migrations/APPLY_THIS_MIGRATION.sql
+─────────────────────────────────────────────────────────────────────────────
+PURPOSE: Database schema changes for matching system
+
+PART 1: Add New Columns
+  ALTER TABLE profiles:
+    • availability_hours_per_week INTEGER
+    • project_size_preference TEXT
+    • project_duration_preference TEXT
+    • collaboration_style TEXT
+    • profile_ai_summary TEXT       ← THE KEY FIELD FOR MATCHING
+
+  ALTER TABLE projects:
+    • project_ai_summary TEXT       ← THE KEY FIELD FOR MATCHING
+
+PART 2: RPC Function (Lines 30-76)
+  CREATE FUNCTION match_projects_to_profile(...)
+  
+  THIS IS THE MATCHING ALGORITHM!
+  
+  Returns columns: id, title, description, tags, owner_id, status, 
+                   duration, availability_needed, project_image_url, 
+                   roadmap, project_ai_summary, created_at, updated_at,
+                   similarity
+  
+  SQL Logic:
+    SELECT 
+        proj.*,
+        1 - (proj.project_embedding <=> 
+             p.bio_embedding) AS similarity
+    FROM projects proj
+    WHERE proj.project_embedding IS NOT NULL
+        AND proj.status = 'open'
+        AND similarity >= match_threshold
+    ORDER BY similarity DESC
+    LIMIT match_limit
+  
+  The <=> operator: Cosine distance between vectors
+  - Returns 0.0 when vectors are identical
+  - Returns 2.0 when vectors are opposite
+  
+  We calculate: 1 - distance = similarity
+  - similarity = 1.0 means 100% match (perfect alignment)
+  - similarity = 0.0 means 0% match (no similarity)
+
+CRITICAL FIX (FIX_RPC_URGENT.sql):
+  Original had: WHERE id = profile_uuid
+  This caused: "column reference 'id' is ambiguous"
+  Fixed to: WHERE p.id = profile_uuid
+  
+  Added table aliases throughout:
+  • p for profiles
+  • proj for projects
+
+
+📄 backend/update_existing_data.py
+─────────────────────────────────────────────────────────────────────────────
+PURPOSE: One-time script to regenerate AI summaries for existing data
+
+WHAT IT DOES:
+1. Fetches all existing profiles
+2. For each profile:
+   - Calls generate_profile_summary()
+   - Calls generate_embedding(summary)
+   - Updates database with new data
+   - Waits 13 seconds (rate limit: 5 requests/minute on free tier)
+
+3. Fetches all existing projects
+4. For each project:
+   - Calls generate_project_summary()
+   - Calls generate_embedding(summary)
+   - Updates database with new data
+   - Waits 13 seconds between requests
+
+WHEN TO RUN:
+• After fixing AI service functions
+• After database schema changes
+• To regenerate embeddings if matching isn't working
+
+OUTPUT:
+  [1/6] Updating profile: Alice Johnson
+    - Generating AI summary...
+    - Summary: This intermediate-level developer...
+    - Generating embedding from summary...
+    - Embedding generated: 768 dimensions
+    ✅ Profile updated successfully
+    ⏳ Waiting 13s to avoid rate limit...
+
+
+─────────────────────────────────────────────────────────────────────────────
+FRONTEND FILES
+─────────────────────────────────────────────────────────────────────────────
+
+📄 frontend/app/(tabs)/index.tsx (Dashboard/Home Page)
+─────────────────────────────────────────────────────────────────────────────
+PURPOSE: User's dashboard with their projects and recommendations
+
+KEY SECTIONS:
+
+• State Management (Lines ~40-60)
+  - userProjects: Projects owned by user
+  - recommendedProjects: Top matched projects for this user
+  - stats: Dashboard statistics (projects created, matches found, etc.)
+
+• loadDashboard() Function (Lines ~85-168)
+  Step 1: Fetch user's profile
+  Step 2: Fetch user's own projects
+  Step 3: Fetch recommended projects
+    API Call: GET /recommended-projects/{profile_id}?limit=6
+    Filters out projects with missing IDs
+    Logs: "Project 1: [title] - Similarity: [score]"
+    Takes first 3 for display
+  
+• "Recommended For You" Section (Lines ~290-340)
+  - Shows top 3 matched projects
+  - Each tile displays:
+    * Project image/placeholder
+    * Title
+    * Description (2 lines)
+    * Tags
+    * Status badge: "OPEN" (green)
+    * Match badge: "⭐ 92% Match" (accent color)
+  
+  Match Badge Logic:
+    {project.similarity !== undefined && (
+      <View style={statusBadge with accent color}>
+        <ThemedText>⭐ {Math.round(project.similarity * 100)}% Match</ThemedText>
+      </View>
+    )}
+
+FLOW:
+1. User opens app → loadDashboard() runs
+2. Fetches their profile ID
+3. Calls /recommended-projects/{profile_id}
+4. Displays top 3 matches with percentage badges
+5. User can click to view full project details
+
+
+📄 frontend/app/(tabs)/explore.tsx (Explore/Browse Page)
+─────────────────────────────────────────────────────────────────────────────
+PURPOSE: Browse all projects with optional match-based sorting
+
+KEY FEATURES:
+• Search bar (filter by text)
+• "Sort by Match" toggle button
+• Project grid with tiles
+• Match percentage badges (when sorted)
+
+KEY STATE:
+• sortByMatch: boolean - Controls which API endpoint to call
+• userProfileId: string - Needed for matching
+• projects: All fetched projects
+• filteredProjects: After search filtering
+• searchQuery: Current search text
+
+• getUserProfile() (Lines ~45-90)
+  - Runs on component mount (useEffect)
+  - Fetches: GET /profile/check/{user.id}
+  - Extracts: userProfileId = data.profile.id
+  - Logs: "Setting userProfileId: [id]"
+  - Required for matching to work!
+
+• fetchProjects() (Lines ~125-210)
+  
+  IF sortByMatch && userProfileId:
+    ┌─────────────────────────────────────────────────────────────┐
+    │ 1. API: GET /recommended-projects/{profile_id}?limit=50     │
+    │ 2. Response: {recommended_projects: [...]}                  │
+    │ 3. Map: project.similarity_score = project.similarity       │
+    │ 4. Log: "First project similarity: [score]"                 │
+    │ 5. Log match scores for top 10 projects                     │
+    └─────────────────────────────────────────────────────────────┘
+  
+  ELSE (default view):
+    ┌─────────────────────────────────────────────────────────────┐
+    │ 1. API: GET /projects?project_status=open&limit=100         │
+    │ 2. Response: {projects: [...], count: N}                    │
+    │ 3. RANDOMIZE: projects.sort(() => Math.random() - 0.5)     │
+    │ 4. Log: "Projects randomized for default view"              │
+    │ 5. No similarity scores                                     │
+    └─────────────────────────────────────────────────────────────┘
+
+• "Sort by Match" Button (Lines ~268-285)
+  Shows different text based on state:
+  - OFF: "⭐ Sort by Match"
+  - ON: "✓ Sorted by Match"
+  
+  OnPress: Toggles sortByMatch → triggers fetchProjects()
+
+• Project Tiles (Lines ~355-420)
+  Each tile shows:
+  - Project image or skull emoji placeholder
+  - Title overlay
+  - Status badge (top right): "OPEN"
+  - Match badge (below status): "⭐ 87% Match" (only when sortByMatch)
+  
+  Match Badge Logic:
+    {sortByMatch && project.similarity_score !== undefined && (
+      <View style={statusBadge at top:40px, accent color}>
+        <ThemedText>⭐ {Math.round(similarity_score * 100)}% Match</ThemedText>
+      </View>
+    )}
+
+CONSOLE LOGGING (for debugging):
+When Sort by Match is ON:
+  === PROJECT MATCH SCORES ===
+  1. AI-Powered Study Assistant: 87%
+  2. Campus Event Discovery: 73%
+  3. FitForge: 65%
+  ===========================
+
+EXPECTED BEHAVIOR:
+1. Default view: Projects in random order, no match badges
+2. Click "Sort by Match": 
+   - Projects reorder by similarity
+   - Match percentage badges appear
+   - Higher scores at top
+3. Toggle off: Back to random order, badges disappear
+
+
+📄 frontend/app/create-profile.tsx
+─────────────────────────────────────────────────────────────────────────────
+PURPOSE: Form to create user profile with matching preferences
+
+NEW FIELDS ADDED FOR MATCHING:
+• Availability Hours per Week (numeric input)
+• Project Size Preference (dropdown: small/medium/large)
+• Project Duration Preference (dropdown: short/medium/long)
+• Collaboration Style (dropdown: remote/in-person/hybrid/async/flexible)
+
+These preferences are:
+1. Sent to backend during profile creation
+2. Included in AI summary generation
+3. Help AI understand what projects user wants
+4. Result in better match scores
+
+
+================================================================================
+10. HOW THE MATCHING ALGORITHM WORKS (TECHNICAL DEEP DIVE)
+================================================================================
+
+STEP 1: VECTOR EMBEDDINGS
+─────────────────────────────────────────────────────────────────────────────
+What are embeddings?
+• Numerical representations of text
+• Capture semantic meaning
+• Similar concepts have similar vectors
+
+Example:
+  "Python developer interested in AI" → [0.23, -0.15, 0.08, ..., 0.42]
+  "Machine learning engineer with Python" → [0.21, -0.14, 0.09, ..., 0.40]
+  "Java backend architect" → [0.05, 0.22, -0.31, ..., 0.11]
+
+Note: First two are similar (close vectors), third is different
+
+
+STEP 2: COSINE SIMILARITY
+─────────────────────────────────────────────────────────────────────────────
+Measures angle between vectors:
+
+                profile_embedding
+                       /
+                      / θ (angle)
+                     /
+                    /_________ project_embedding
+
+Cosine Distance = 1 - cos(θ)
+• When θ = 0° (same direction): distance = 0 (identical)
+• When θ = 90° (perpendicular): distance = 1 (unrelated)
+• When θ = 180° (opposite): distance = 2 (opposite meaning)
+
+We calculate: Similarity = 1 - Distance
+• 1.0 = perfect match (100%)
+• 0.5 = moderate match (50%)
+• 0.0 = no match (0%)
+
+PostgreSQL operator: <=>
+• Calculates cosine distance
+• Optimized with HNSW index for fast lookups
+
+
+STEP 3: THE MATCHING PROCESS
+─────────────────────────────────────────────────────────────────────────────
+
+Given:
+• Profile embedding: P = [p1, p2, ..., p768]
+• Project embedding: J = [j1, j2, ..., j768]
+
+Calculate:
+  distance = P <=> J  (using pgvector extension)
+  similarity = 1 - distance
+
+For all open projects:
+  1. Get each project's embedding
+  2. Calculate similarity with user's profile embedding
+  3. Sort by similarity (descending)
+  4. Return top N matches
+
+Why it's smart:
+• Understands "Python developer" matches "AI/ML project"
+• Understands "beginner" matches "tutorial project"
+• Understands "remote work" matches "async collaboration"
+• Goes beyond just matching keywords!
+
+
+STEP 4: THE AI SUMMARY ADVANTAGE
+─────────────────────────────────────────────────────────────────────────────
+
+Instead of embedding raw data:
+  ❌ "Skills: [Python, JavaScript, React]. Major: Computer Science..."
+  
+We embed AI understanding:
+  ✓ "This intermediate developer bridges modern web development and AI/ML,
+     bringing Python, JavaScript, and React expertise. They excel in
+     full-stack projects requiring both frontend polish and backend logic,
+     making them ideal for cross-functional team collaborations."
+
+The AI summary:
+• Captures nuance and context
+• Understands relationships between skills
+• Infers project preferences
+• Creates better embeddings
+• Results in more accurate matching
+
+
+================================================================================
+11. TROUBLESHOOTING GUIDE
+================================================================================
+
+PROBLEM: Match scores show 0% for all projects
+─────────────────────────────────────────────────────────────────────────────
+CAUSE: RPC function has SQL error or embeddings are zeros
+
+CHECK:
+1. Run: backend/test_rpc.py
+   Should show real match scores, not error
+
+2. Query database:
+   SELECT profile_ai_summary, bio_embedding 
+   FROM profiles LIMIT 1;
+   
+   Should see:
+   - profile_ai_summary: Real text (not NULL)
+   - bio_embedding: Numbers (not all zeros)
+
+3. Check Supabase SQL Editor logs for RPC errors
+
+FIX:
+1. Apply: backend/migrations/FIX_RPC_URGENT.sql
+2. Re-run: backend/update_existing_data.py
+
+
+PROBLEM: Projects don't reorder when clicking "Sort by Match"
+─────────────────────────────────────────────────────────────────────────────
+CAUSE: Either fetching same data or similarity scores missing
+
+CHECK:
+1. Open browser console (F12)
+2. Look for logs:
+   - "Fetching recommended projects"
+   - "=== PROJECT MATCH SCORES ===" with actual percentages
+
+3. Check Network tab:
+   - Should see call to /recommended-projects when sorted
+   - Should see call to /projects when not sorted
+
+FIX:
+1. Ensure userProfileId is set (check console logs)
+2. Verify API is returning different data for each endpoint
+3. Check that similarity_score is being mapped correctly
+
+
+PROBLEM: "Create a profile to see personalized matches"
+─────────────────────────────────────────────────────────────────────────────
+CAUSE: Profile not found or userProfileId not set
+
+CHECK:
+1. Console logs should show: "Setting userProfileId: [uuid]"
+2. If not, profile check is failing
+
+FIX:
+1. Ensure profile exists for current user
+2. Check API endpoint: GET /profile/check/{user.id}
+3. Should return: {exists: true, profile: {id: "...", ...}}
+
+
+PROBLEM: API quota exceeded
+─────────────────────────────────────────────────────────────────────────────
+ERROR: "429 You exceeded your current quota"
+
+CAUSE: Free tier limits:
+- 5 requests per minute
+- 20 requests per day (for some operations)
+
+FIX:
+1. Wait for rate limit to reset
+2. Use update_existing_data.py (has 13s delays)
+3. Upgrade to paid tier if needed
+
+
+PROBLEM: Match badges not showing
+─────────────────────────────────────────────────────────────────────────────
+CAUSE: Conditional rendering fails or similarity_score undefined
+
+CHECK:
+1. Console log project data
+2. Should see similarity_score field when sorted
+
+FIX:
+1. Ensure mapping: similarity_score = project.similarity
+2. Check condition: {sortByMatch && project.similarity_score !== undefined}
+
+
+================================================================================
+12. TESTING CHECKLIST
+================================================================================
+
+✓ BACKEND TESTS
+─────────────────────────────────────────────────────────────────────────────
+[ ] Run test_rpc.py - Should show real match scores
+[ ] Check database - AI summaries exist and are not NULL
+[ ] Check embeddings - Not all zeros, should be 768 dimensions
+[ ] Test /recommended-projects endpoint - Returns sorted projects
+[ ] Test /projects endpoint - Returns all open projects
+[ ] Verify rate limiting - No 429 errors
+
+
+✓ FRONTEND TESTS
+─────────────────────────────────────────────────────────────────────────────
+[ ] Default view - Projects in random order
+[ ] Click "Sort by Match" - Projects reorder
+[ ] Match badges appear - Show real percentages
+[ ] Click again - Back to random order, badges disappear
+[ ] Dashboard - Shows top 3 recommendations with badges
+[ ] Search - Works regardless of sort mode
+[ ] Navigation - Clicking projects goes to detail page
+
+
+✓ END-TO-END TESTS
+─────────────────────────────────────────────────────────────────────────────
+[ ] Create new profile - AI summary generated
+[ ] Create new project - AI summary generated
+[ ] View recommendations - See matched projects
+[ ] Scores make sense - Higher for relevant projects
+[ ] Different profiles - Get different recommendations
+
+
+================================================================================
+13. PERFORMANCE NOTES
+================================================================================
+
+FAST OPERATIONS (< 100ms):
+• Fetching recommended projects (vector similarity via RPC)
+• Loading project list
+• Displaying match badges
+
+SLOW OPERATIONS (1-3 seconds):
+• Creating profile (generates AI summary + embedding)
+• Creating project (generates roadmap + summary + embedding)
+• Running update_existing_data.py (13s per item due to rate limits)
+
+OPTIMIZATION TIPS:
+• AI summaries generated once → stored
+• Embeddings calculated once → stored
+• Matching uses indexes → fast
+• No AI calls during browsing → instant
+
+
+================================================================================
+14. FUTURE ENHANCEMENTS
+================================================================================
+
+POTENTIAL IMPROVEMENTS:
+• Adjust match_threshold to filter low scores
+• Add "Why is this a match?" explanations
+• Weight certain factors (skills > interests)
+• Machine learning to improve matches over time
+• A/B test different AI prompts
+• Cache recommendations (refresh every hour)
+• Add "Not interested" feedback to refine matches
+
+
+================================================================================
+15. SUMMARY
+================================================================================
+
+The matching system works in 3 stages:
+
+STAGE 1: PREPARATION (One-time, during creation)
+• Generate AI summary of profile/project
+• Create vector embedding from summary
+• Store both in database
+
+STAGE 2: MATCHING (On-demand, when browsing)
+• Use RPC function to calculate similarity
+• Compare user's embedding with all project embeddings
+• Return projects sorted by similarity score
+
+STAGE 3: DISPLAY (Real-time, in UI)
+• Dashboard: Show top 3 matches
+• Explore page: Toggle between random and sorted
+• Show match percentage badges
+• Enable informed decision-making
+
+This creates an intelligent matching system that understands context and 
+semantics, not just keywords!
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
