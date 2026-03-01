@@ -237,7 +237,7 @@ export default function ExploreScreen() {
               <TouchableOpacity 
                 key={project.id} 
                 style={styles.projectCard}
-                onPress={() => alert(`Project: ${project.title}`)}
+                onPress={() => router.push(`/project/${project.id}`)}
               >
                 <View style={styles.projectHeader}>
                   <ThemedText type="defaultSemiBold" style={styles.projectTitle}>
