@@ -94,6 +94,7 @@ export default function RequestReviewScreen() {
                   params: {
                     chatId: result.data!.chat_id,
                     projectTitle: details.project.title,
+                    projectId: details.project.id,
                     otherName: `${details.requester.first_name} ${details.requester.last_name}`,
                     otherProfileId: details.requester.id,
                   },
