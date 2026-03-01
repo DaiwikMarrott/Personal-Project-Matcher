@@ -1,432 +1,261 @@
-import { StyleSheet, ScrollView, View, TouchableOpacity, TextInput, ActivityIndicator, Platform, KeyboardAvoidingView, Image, Alert } from 'react-native';
+/**
+ * Create Project Screen
+ * Post a new project idea
+ */
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Image,
+} from 'react-native';
 import { useState } from 'react';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
+import { createProject } from '@/services/api';
 import * as ImagePicker from 'expo-image-picker';
-import Colors from '@/constants/colors';
-
-// Use hardcoded URL for web, env variable for native
-const getApiUrl = () => {
-  if (Platform.OS === 'web') {
-    return 'http://localhost:8000';
-  }
-  return process.env.EXPO_PUBLIC_API_URL || 'http://10.0.2.2:8000';
-};
-
-const API_URL = getApiUrl();
 
 export default function PostProjectScreen() {
-  const { user } = useAuth();
+  const { user, checkProfileExists } = useAuth();
   const router = useRouter();
-  
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
   const [duration, setDuration] = useState('');
   const [availability, setAvailability] = useState('');
-  const [projectImage, setProjectImage] = useState<string | null>(null);
-  const [imageFile, setImageFile] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
-
-  const validateForm = () => {
-    if (!title.trim()) {
-      setError('Please enter a project title');
-      return false;
-    }
-    
-    if (title.trim().length < 5) {
-      setError('Title must be at least 5 characters long');
-      return false;
-    }
-    
-    if (!description.trim()) {
-      setError('Please enter a project description');
-      return false;
-    }
-    
-    if (description.trim().length < 50) {
-      setError('Description must be at least 50 characters to generate a quality roadmap. Please provide more details about your project goals, required skills, and expected outcomes.');
-      return false;
-    }
-
-    if (description.trim().length > 2000) {
-      setError('Description is too long (max 2000 characters)');
-      return false;
-    }
-    
-    return true;
-  };
+  const [imageUri, setImageUri] = useState<string | null>(null);
 
   const pickImage = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [16, 9],
-        quality: 0.8,
-        base64: true,
-      });
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please grant camera roll permissions');
+      return;
+    }
 
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        const imageUri = asset.base64 
-          ? `data:image/jpeg;base64,${asset.base64}`
-          : asset.uri;
-        setProjectImage(imageUri);
-        setImageFile(asset);
-      }
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      setImageUri(result.assets[0].uri);
     }
   };
 
   const handleSubmit = async () => {
     if (!user) {
-      setError('You must be logged in to post a project');
+      Alert.alert('Error', 'You must be logged in to post a project');
       return;
     }
 
-    if (!validateForm()) {
+    if (!title.trim() || !description.trim()) {
+      Alert.alert('Error', 'Please fill in title and description');
       return;
     }
 
-    setError('');
+    if (description.length < 50) {
+      Alert.alert(
+        'Error',
+        'Description must be at least 50 characters to generate a quality roadmap.'
+      );
+      return;
+    }
+
     setLoading(true);
-
     try {
-      const tagsArray = tags
-        .split(',')
-        .map(tag => tag.trim())
-        .filter(tag => tag.length > 0);
-
-      const projectData = {
-        owner_id: user.id,
-        title: title.trim(),
-        description: description.trim(),
-        tags: tagsArray,
-        duration: duration.trim() || null,
-        availability_needed: availability.trim() || null,
-        project_image_url: projectImage || null,
-      };
-
-      console.log('Submitting project:', projectData);
-
-      const response = await fetch(`${API_URL}/project`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(projectData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to create project');
+      // Get user profile
+      const { exists, profile } = await checkProfileExists(user.id);
+      if (!exists || !profile) {
+        Alert.alert('Error', 'Please create your profile first');
+        router.push('/create-profile');
+        return;
       }
 
-      const result = await response.json();
-      console.log('Project created:', result);
+      // Parse tags
+      const tagArray = tags
+        .split(',')
+        .map((tag) => tag.trim())
+        .filter((tag) => tag.length > 0);
 
-      setSuccess(true);
-      setTitle('');
-      setDescription('');
-      setTags('');
-      setDuration('');
-      setAvailability('');
-      setProjectImage(null);
-      setImageFile(null);
+      // Upload image if selected
+      let projectImageUrl: string | undefined = undefined;
+      if (imageUri) {
+        try {
+          const response = await fetch(imageUri);
+          const blob = await response.blob();
+          const formData = new FormData();
+          formData.append('file', blob, 'project-image.jpg');
 
-      // Show success message for 3 seconds to allow AI processing, then navigate to explore
-      setTimeout(() => {
-        setSuccess(false);
-        router.push('/explore');
-      }, 3000);
+          const uploadResponse = await fetch(`http://localhost:8000/upload-project-image/${profile.id}`, {
+            method: 'POST',
+            body: formData,
+          });
 
-    } catch (err: any) {
-      console.error('Error creating project:', err);
-      setError(err.message || 'Failed to create project. Please try again.');
+          if (uploadResponse.ok) {
+            const { url } = await uploadResponse.json();
+            projectImageUrl = url;
+          }
+        } catch (error) {
+          console.error('Image upload failed:', error);
+        }
+      }
+
+      // Create project
+      const result = await createProject({
+        owner_id: profile.id,
+        title: title.trim(),
+        description: description.trim(),
+        tags: tagArray,
+        duration: duration.trim() || undefined,
+        availability_needed: availability.trim() || undefined,
+        project_image_url: projectImageUrl,
+      });
+
+      if (result.error) {
+        Alert.alert('Error', result.error);
+      } else {
+        Alert.alert('Success', 'Project created successfully!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Clear form
+              setTitle('');
+              setDescription('');
+              setTags('');
+              setDuration('');
+              setAvailability('');
+              setImageUri(null);
+              // Navigate to explore
+              router.push('/(tabs)/explore');
+            },
+          },
+        ]);
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to create project');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleClear = () => {
-    setTitle('');
-    setDescription('');
-    setTags('');
-    setDuration('');
-    setAvailability('');
-    setProjectImage(null);
-    setImageFile(null);
-    setError('');
-  };
-
-  if (!user) {
-    return (
-      <ThemedView style={styles.container}>
-        <View style={styles.content}>
-          <ThemedText type="title" style={styles.title}>
-            Post a Project 💡
-          </ThemedText>
-          <View style={styles.errorCard}>
-            <ThemedText style={styles.errorText}>
-              Please sign in to post a project idea
-            </ThemedText>
-          </View>
-        </View>
-      </ThemedView>
-    );
-  }
-
-  if (success) {
-    return (
-      <ThemedView style={styles.container}>
-        <View style={styles.content}>
-          <View style={styles.successCard}>
-            <ActivityIndicator size="large" color="#4CAF50" style={styles.successSpinner} />
-            <ThemedText style={styles.successEmoji}>🎉</ThemedText>
-            <ThemedText type="subtitle" style={styles.successTitle}>
-              Project Created Successfully!
-            </ThemedText>
-            <ThemedText style={styles.successText}>
-              ✨ Dr. Jekyll is generating your AI-powered roadmap...
-            </ThemedText>
-            <ThemedText style={styles.successText}>
-              🔄 Loading your project into the explore page...
-            </ThemedText>
-            <ThemedText style={styles.successSubtext}>
-              Please wait...
-            </ThemedText>
-          </View>
-        </View>
-      </ThemedView>
-    );
-  }
-
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
+      style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1 }}
     >
-      <ScrollView style={styles.container}>
-        <ThemedView style={styles.content}>
-          <View style={styles.header}>
-            <ThemedText type="title" style={styles.title}>
-              Post a Project 💡
-            </ThemedText>
-            <ThemedText style={styles.subtitle}>
-              Share your vision - Dr. Jekyll will generate a technical roadmap
-            </ThemedText>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.card}>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Project Name</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g. AI Study Buddy"
+              placeholderTextColor="#a8a29e"
+              value={title}
+              onChangeText={setTitle}
+              editable={!loading}
+            />
           </View>
 
-          <View style={styles.infoCard}>
-            <ThemedText style={styles.infoEmoji}>🤖</ThemedText>
-            <ThemedText style={styles.infoText}>
-              Our AI will analyze your project and create a professional roadmap to help others understand how to contribute.
-            </ThemedText>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder="Describe your project, goals, and what you're looking for..."
+              placeholderTextColor="#a8a29e"
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+              editable={!loading}
+            />
+            <Text style={styles.hint}>
+              {description.length}/2000 characters (min. 50)
+            </Text>
           </View>
 
-          {error ? (
-            <View style={styles.errorCard}>
-              <ThemedText style={styles.errorText}>{error}</ThemedText>
-            </View>
-          ) : null}
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Tags (comma separated)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="React, Python, Design"
+              placeholderTextColor="#a8a29e"
+              value={tags}
+              onChangeText={setTags}
+              editable={!loading}
+            />
+          </View>
 
-          <View style={styles.formSection}>
-            <View style={styles.inputGroup}>
-              <ThemedText style={styles.label}>
-                Project Title <ThemedText style={styles.required}>*</ThemedText>
-              </ThemedText>
+          <View style={styles.row}>
+            <View style={[styles.inputContainer, styles.halfWidth]}>
+              <Text style={styles.label}>Duration</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g., AI-Powered Health Tracker App"
-                placeholderTextColor="#999"
-                value={title}
-                onChangeText={setTitle}
-                maxLength={100}
-              />
-              <ThemedText style={styles.helper}>
-                {title.length}/100 characters
-              </ThemedText>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <ThemedText style={styles.label}>
-                Project Description <ThemedText style={styles.required}>*</ThemedText>
-              </ThemedText>
-              <ThemedText style={styles.helper}>
-                Be specific! Include: goals, required skills, target users, and key features.
-              </ThemedText>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                placeholder={`Example: "I want to build a mobile app that helps college students track their health metrics using AI. The app should:
-• Track daily exercise, sleep, and nutrition
-• Use machine learning to provide personalized recommendations
-• Have a clean, intuitive UI with data visualization
-• Integrate with wearable devices
-
-Looking for: Frontend developer (React Native), Backend developer (Python/FastAPI), and someone with ML experience."`}
-                placeholderTextColor="#999"
-                value={description}
-                onChangeText={setDescription}
-                multiline
-                numberOfLines={10}
-                maxLength={2000}
-                textAlignVertical="top"
-              />
-              <View style={styles.helperRow}>
-                <ThemedText style={[
-                  styles.helper,
-                  description.length < 50 && styles.helperWarning
-                ]}>
-                  {description.length}/2000 characters
-                </ThemedText>
-                {description.length < 50 && (
-                  <ThemedText style={styles.helperWarning}>
-                    (minimum 50 for AI roadmap)
-                  </ThemedText>
-                )}
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <ThemedText style={styles.label}>
-                Tags (Optional)
-              </ThemedText>
-              <ThemedText style={styles.helper}>
-                Comma-separated: e.g., "AI, Mobile, Health, React Native"
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                placeholder="AI, Mobile, Health, React Native"
-                placeholderTextColor="#999"
-                value={tags}
-                onChangeText={setTags}
-                maxLength={200}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <ThemedText style={styles.label}>
-                Project Duration (Optional)
-              </ThemedText>
-              <ThemedText style={styles.helper}>
-                How long do you expect this project to take?
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                placeholder="e.g., 2 weeks, 3 months, 1 semester"
-                placeholderTextColor="#999"
+                placeholder="e.g. 3 months"
+                placeholderTextColor="#a8a29e"
                 value={duration}
                 onChangeText={setDuration}
-                maxLength={50}
+                editable={!loading}
               />
             </View>
 
-            <View style={styles.inputGroup}>
-              <ThemedText style={styles.label}>
-                Availability Needed (Optional)
-              </ThemedText>
-              <ThemedText style={styles.helper}>
-                When do you need team members to be available?
-              </ThemedText>
+            <View style={[styles.inputContainer, styles.halfWidth]}>
+              <Text style={styles.label}>Availability Needed</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g., 10 hours/week, Weekends, Flexible"
-                placeholderTextColor="#999"
+                placeholder="e.g. 10 hrs/week"
+                placeholderTextColor="#a8a29e"
                 value={availability}
                 onChangeText={setAvailability}
-                maxLength={100}
+                editable={!loading}
               />
             </View>
+          </View>
 
-            <View style={styles.inputGroup}>
-              <ThemedText style={styles.label}>
-                Project Image (Optional)
-              </ThemedText>
-              <ThemedText style={styles.helper}>
-                Upload a schematic, diagram, or mockup for your project
-              </ThemedText>
-              
-              {projectImage ? (
-                <View style={styles.imageContainer}>
-                  <Image 
-                    source={{ uri: projectImage }} 
-                    style={styles.projectImage}
-                    resizeMode="cover"
-                  />
-                  <TouchableOpacity 
-                    style={styles.changeImageButton}
-                    onPress={pickImage}
-                  >
-                    <ThemedText style={styles.changeImageText}>Change Image</ThemedText>
-                  </TouchableOpacity>
-                </View>
+          <View style={styles.inputContainer}>
+            <Text style={styles.label}>Project Image</Text>
+            <TouchableOpacity
+              style={styles.imagePickerButton}
+              onPress={pickImage}
+              disabled={loading}
+            >
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} style={styles.imagePreview} />
               ) : (
-                <TouchableOpacity 
-                  style={styles.uploadButton}
-                  onPress={pickImage}
-                >
-                  <ThemedText style={styles.uploadEmoji}>📷</ThemedText>
-                  <ThemedText style={styles.uploadText}>Tap to Upload Image</ThemedText>
-                </TouchableOpacity>
+                <View style={styles.imagePlaceholder}>
+                  <Text style={styles.imagePlaceholderText}>📷 Tap to add image</Text>
+                </View>
               )}
-            </View>
-
-            <View style={styles.buttonRow}>
-              <TouchableOpacity 
-                style={styles.clearButton} 
-                onPress={handleClear}
-                disabled={loading}
-              >
-                <ThemedText style={styles.clearButtonText}>Clear</ThemedText>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[
-                  styles.submitButton,
-                  loading && styles.submitButtonDisabled
-                ]} 
-                onPress={handleSubmit}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <ThemedText style={styles.submitButtonText}>
-                    Create Project 🚀
-                  </ThemedText>
-                )}
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.tipsCard}>
-            <ThemedText type="defaultSemiBold" style={styles.tipsTitle}>
-              💡 Tips for a Great Project Post
-            </ThemedText>
-            <ThemedText style={styles.tipText}>
-              ✓ Be specific about what you want to build
-            </ThemedText>
-            <ThemedText style={styles.tipText}>
-              ✓ Mention required skills and technologies
-            </ThemedText>
-            <ThemedText style={styles.tipText}>
-              ✓ Explain the problem you're solving
-            </ThemedText>
-            <ThemedText style={styles.tipText}>
-              ✓ Include timeline or scope expectations
-            </ThemedText>
-            <ThemedText style={styles.tipText}>
-              ✓ The more detail, the better the AI roadmap!
-            </ThemedText>
-          </View>
-        </ThemedView>
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleSubmit}
+            disabled={loading}
+            activeOpacity={0.8}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Post Project</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -435,245 +264,105 @@ Looking for: Frontend developer (React Native), Backend developer (Python/FastAP
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#e6f7ed',
+  },
+  scrollView: {
+    flex: 1,
   },
   content: {
-    flex: 1,
     padding: 20,
-    paddingTop: 60,
     paddingBottom: 40,
   },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    color: Colors.text.primary,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.text.secondary,
-  },
-  infoCard: {
-    backgroundColor: Colors.info,
-    borderRadius: 16,
-    padding: 18,
-    marginBottom: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  infoEmoji: {
-    fontSize: 28,
-    marginRight: 14,
-  },
-  infoText: {
-    flex: 1,
-    color: Colors.primaryDark,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  errorCard: {
-    backgroundColor: Colors.error,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-  },
-  errorText: {
-    color: Colors.text.inverse,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  successCard: {
-    backgroundColor: Colors.success,
-    borderRadius: 20,
+  card: {
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 32,
     padding: 40,
-    alignItems: 'center',
-    marginTop: 100,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
   },
-  successSpinner: {
+  inputContainer: {
     marginBottom: 20,
   },
-  successEmoji: {
-    fontSize: 72,
-    marginBottom: 20,
+  row: {
+    flexDirection: 'row',
+    gap: 16,
   },
-  successTitle: {
-    color: Colors.text.inverse,
-    fontSize: 26,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  successText: {
-    color: Colors.text.inverse,
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  successSubtext: {
-    color: Colors.text.inverse,
-    fontSize: 14,
-    opacity: 0.9,
-    textAlign: 'center',
-  },
-  formSection: {
-    marginBottom: 24,
-  },
-  inputGroup: {
-    marginBottom: 24,
+  halfWidth: {
+    flex: 1,
   },
   label: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
+    color: '#57534e',
     marginBottom: 8,
-    color: Colors.text.primary,
-  },
-  required: {
-    color: Colors.error,
-  },
-  helper: {
-    fontSize: 13,
-    color: Colors.text.tertiary,
-    marginBottom: 8,
-  },
-  helperRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  helperWarning: {
-    color: Colors.warning,
-    fontWeight: '600',
+    marginLeft: 4,
   },
   input: {
-    borderWidth: 1,
-    borderColor: Colors.border.light,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    backgroundColor: Colors.surface,
-    color: Colors.text.primary,
-  },
-  textArea: {
-    minHeight: 200,
-    paddingTop: 14,
-    textAlignVertical: 'top',
-  },
-  imageContainer: {
-    marginTop: 12,
-  },
-  projectImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  changeImageButton: {
-    backgroundColor: Colors.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     borderWidth: 2,
-    borderColor: Colors.border.medium,
-    borderRadius: 10,
-    padding: 12,
-    alignItems: 'center',
-  },
-  changeImageText: {
-    color: Colors.text.secondary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  uploadButton: {
-    backgroundColor: Colors.surface,
-    borderWidth: 2,
-    borderColor: Colors.border.light,
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    padding: 40,
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  uploadEmoji: {
-    fontSize: 48,
-    marginBottom: 8,
-  },
-  uploadText: {
+    borderColor: '#a7f3d0',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     fontSize: 16,
-    color: Colors.text.secondary,
+    color: '#1c1917',
     fontWeight: '500',
   },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 12,
+  textArea: {
+    minHeight: 120,
+    paddingTop: 14,
   },
-  clearButton: {
-    flex: 1,
-    backgroundColor: Colors.surface,
+  hint: {
+    fontSize: 12,
+    color: '#78716c',
+    marginTop: 8,
+    marginLeft: 4,
+  },
+  imagePickerButton: {
+    width: '100%',
+    height: 200,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  imagePreview: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  imagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
     borderWidth: 2,
-    borderColor: Colors.border.medium,
-    borderRadius: 12,
-    padding: 16,
+    borderColor: '#a7f3d0',
+    borderRadius: 16,
+    borderStyle: 'dashed',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  clearButtonText: {
-    color: Colors.text.secondary,
-    fontSize: 16,
+  imagePlaceholderText: {
+    fontSize: 18,
+    color: '#78716c',
     fontWeight: '600',
   },
-  submitButton: {
-    flex: 2,
-    backgroundColor: Colors.accent,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
+  button: {
+    backgroundColor: '#10B981',
+    paddingVertical: 20,
+    borderRadius: 16,
+    marginTop: 32,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 5,
   },
-  submitButtonDisabled: {
+  buttonDisabled: {
     opacity: 0.6,
   },
-  submitButtonText: {
-    color: Colors.text.inverse,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  tipsCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 24,
-    marginBottom: 40,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  tipsTitle: {
-    fontSize: 18,
-    marginBottom: 16,
-    color: Colors.text.primary,
-    fontWeight: '600',
-  },
-  tipText: {
-    fontSize: 14,
-    marginBottom: 8,
-    color: Colors.text.secondary,
-    lineHeight: 20,
+  buttonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 });
