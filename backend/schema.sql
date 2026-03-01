@@ -28,6 +28,7 @@ CREATE TABLE projects (
     title VARCHAR(300) NOT NULL,
     description TEXT NOT NULL,
     tags TEXT[],
+    duration VARCHAR(100), -- Expected project duration (e.g., "2 weeks", "3 months")
     roadmap JSONB DEFAULT '{}', -- AI-generated technical roadmap
     project_embedding VECTOR(768), -- 768-dimensional embedding for semantic matching
     status VARCHAR(50) DEFAULT 'open' CHECK (status IN ('open', 'in-progress', 'completed', 'closed')),

@@ -22,6 +22,7 @@ export default function PostProjectScreen() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
+  const [duration, setDuration] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -79,6 +80,7 @@ export default function PostProjectScreen() {
         title: title.trim(),
         description: description.trim(),
         tags: tagsArray,
+        duration: duration.trim() || null,
       };
 
       console.log('Submitting project:', projectData);
@@ -103,6 +105,7 @@ export default function PostProjectScreen() {
       setTitle('');
       setDescription('');
       setTags('');
+      setDuration('');
 
       // Show success message for 2 seconds, then navigate to explore
       setTimeout(() => {
@@ -122,6 +125,7 @@ export default function PostProjectScreen() {
     setTitle('');
     setDescription('');
     setTags('');
+    setDuration('');
     setError('');
   };
 
@@ -263,6 +267,23 @@ Looking for: Frontend developer (React Native), Backend developer (Python/FastAP
                 value={tags}
                 onChangeText={setTags}
                 maxLength={200}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <ThemedText style={styles.label}>
+                Project Duration (Optional)
+              </ThemedText>
+              <ThemedText style={styles.helper}>
+                How long do you expect this project to take?
+              </ThemedText>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., 2 weeks, 3 months, 1 semester"
+                placeholderTextColor="#999"
+                value={duration}
+                onChangeText={setDuration}
+                maxLength={50}
               />
             </View>
 

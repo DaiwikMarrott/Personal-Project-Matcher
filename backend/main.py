@@ -94,6 +94,7 @@ class ProjectCreate(BaseModel):
     title: str
     description: str
     tags: Optional[List[str]] = []
+    duration: Optional[str] = None
 
 
 class ProjectResponse(BaseModel):
@@ -102,6 +103,7 @@ class ProjectResponse(BaseModel):
     title: str
     description: str
     tags: Optional[List[str]]
+    duration: Optional[str]
     roadmap: Optional[Dict[str, Any]]
     status: str
 
