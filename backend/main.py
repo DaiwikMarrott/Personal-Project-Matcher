@@ -798,6 +798,24 @@ async def get_project(project_id: str):
         )
 
 
+# Get interest count for a project
+@app.get("/project/{project_id}/interest-count")
+async def get_project_interest_count(project_id: str):
+    """Return the number of people who have expressed interest in this project."""
+    try:
+        response = (
+            supabase.table("notifications")
+            .select("id", count="exact")
+            .eq("project_id", project_id)
+            .eq("notification_type", "interest")
+            .execute()
+        )
+        return {"project_id": project_id, "interest_count": response.count or 0}
+    except Exception as e:
+        logger.warning(f"Could not fetch interest count: {str(e)}")
+        return {"project_id": project_id, "interest_count": 0}
+
+
 # Update a project
 @app.put("/project/{project_id}", response_model=ProjectResponse)
 async def update_project(project_id: str, updates: dict):
@@ -977,15 +995,50 @@ async def delete_project(project_id: str, delete_request: dict):
 
 
 # Get all projects (with optional filtering)
+@app.get("/profile/{profile_id}/stats")
+async def get_profile_stats(profile_id: str):
+    """Return home-screen stats for a user: projects created, interactions this week, approved/denied counts."""
+    try:
+        from datetime import datetime, timezone, timedelta
+        week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+
+        # Projects created
+        created_resp = supabase.table("projects").select("id", count="exact").eq("owner_id", profile_id).execute()
+        projects_created = created_resp.count or 0
+
+        # Interest notifications sent by this user in the last 7 days (projects interacted with)
+        interacted_resp = supabase.table("notifications").select("id", count="exact").eq("sender_id", profile_id).eq("notification_type", "interest").gte("created_at", week_ago).execute()
+        interactions_this_week = interacted_resp.count or 0
+
+        # Approved and denied counts received by this user
+        approved_resp = supabase.table("notifications").select("id", count="exact").eq("recipient_id", profile_id).eq("notification_type", "approved").execute()
+        denied_resp = supabase.table("notifications").select("id", count="exact").eq("recipient_id", profile_id).eq("notification_type", "denied").execute()
+        approved_count = approved_resp.count or 0
+        denied_count = denied_resp.count or 0
+
+        return {
+            "projects_created": projects_created,
+            "interactions_this_week": interactions_this_week,
+            "approved_count": approved_count,
+            "denied_count": denied_count,
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching profile stats: {str(e)}")
+        return {"projects_created": 0, "interactions_this_week": 0, "approved_count": 0, "denied_count": 0}
+
+
 @app.get("/projects")
-async def get_projects(project_status: Optional[str] = "open", limit: int = 50):
+async def get_projects(project_status: Optional[str] = "open", owner_id: Optional[str] = None, limit: int = 50):
     """Get all projects with optional status filter and owner information"""
-    logger.info(f"Fetching projects with status={project_status}, limit={limit}")
+    logger.info(f"Fetching projects with status={project_status}, owner_id={owner_id}, limit={limit}")
     try:
         query = supabase.table("projects").select("*")
         
         if project_status:
             query = query.eq("status", project_status)
+        if owner_id:
+            query = query.eq("owner_id", owner_id)
         
         response = query.limit(limit).execute()
         projects = response.data or []
