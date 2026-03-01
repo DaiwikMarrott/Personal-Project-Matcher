@@ -81,6 +81,14 @@ export default function ExploreScreen() {
     }, [user, backendOnline])
   );
 
+  // Refetch projects when sortByMatch changes
+  useEffect(() => {
+    if (user && backendOnline) {
+      console.log('Sort mode changed to:', sortByMatch ? 'SORTED' : 'RANDOM');
+      fetchProjects();
+    }
+  }, [sortByMatch, userProfileId]);
+
   const checkBackendHealth = async () => {
     try {
       console.log('Checking backend at:', API_URL);
@@ -160,7 +168,7 @@ export default function ExploreScreen() {
           console.log('Recommended projects loaded:', data.recommended_projects?.length || 0);
           allProjects = data.recommended_projects || [];
           // Add similarity_score field from similarity
-          allProjects = allProjects.map(p => ({ 
+          allProjects = allProjects.map((p: any) => ({ 
             ...p, 
             similarity_score: p.similarity 
           }));
@@ -276,9 +284,9 @@ export default function ExploreScreen() {
           <TouchableOpacity 
             style={[styles.filterButton, sortByMatch && styles.filterButtonActive]}
             onPress={() => {
+              console.log('Toggling sort mode from', sortByMatch, 'to', !sortByMatch);
               setSortByMatch(!sortByMatch);
-              // Refetch when toggling match sorting
-              fetchProjects();
+              // fetchProjects will be called automatically by useEffect
             }}
           >
             <ThemedText style={[styles.filterButtonText, sortByMatch && styles.filterButtonTextActive]}>
@@ -417,15 +425,10 @@ export default function ExploreScreen() {
                   </View>
                   
                   {/* Match Badge - Show when sorted by match */}
-                  {sortByMatch && project.similarity_score !== undefined && (
-                    <View style={[styles.statusBadge, { 
-                      backgroundColor: Colors.accent,
-                      top: 40,  // Below the status badge
-                      paddingHorizontal: 12,
-                      paddingVertical: 6,
-                    }]}>
-                      <ThemedText style={styles.statusText}>
-                        ⭐ {Math.round(project.similarity_score * 100)}% Match
+                  {sortByMatch && (
+                    <View style={[styles.matchBadge]}>
+                      <ThemedText style={styles.matchBadgeText}>
+                        ⭐ {project.similarity_score !== undefined ? Math.round(project.similarity_score * 100) : 0}%
                       </ThemedText>
                     </View>
                   )}
@@ -643,7 +646,7 @@ const styles = StyleSheet.create({
   projectImagePlaceholder: {
     width: '100%',
     height: '100%',
-    backgroundColor: Colors.backgroundSecondary,
+    backgroundColor: Colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'absolute',
@@ -680,9 +683,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
   },
+  matchBadge: {
+    position: 'absolute',
+    top: 40,
+    right: 6,
+    backgroundColor: Colors.accent,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  matchBadgeText: {
+    color: Colors.text.inverse,
+    fontSize: 11,
+    fontWeight: '700',
+  },
 
   troubleshootContainer: {
-    backgroundColor: Colors.backgroundSecondary,
+    backgroundColor: Colors.surface,
     padding: 20,
     borderRadius: 12,
     marginTop: 16,
