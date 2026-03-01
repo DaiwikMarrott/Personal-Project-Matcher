@@ -1,1150 +1,403 @@
 /**
- * Modern Home Screen with Dashboard
- * Features: User stats, recent projects, quick actions
- * Theme: Pastel green, minimalistic design
+ * Home Screen  
+ * Shows personalized project recommendations
  */
 import { 
   StyleSheet, 
   View, 
   ScrollView, 
   TouchableOpacity, 
-  TextInput,
   ActivityIndicator,
-  Platform,
+  RefreshControl,
+  Text,
   Image,
-  Dimensions
 } from 'react-native';
 import { useState, useEffect } from 'react';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'expo-router';
-import Colors from '@/constants/colors';
-
-const windowWidth = Dimensions.get('window').width;
-
-const API_URL = Platform.OS === 'web' 
-  ? 'http://localhost:8000' 
-  : Platform.OS === 'android' 
-    ? 'http://10.0.2.2:8000' 
-    : 'http://localhost:8000';
+import { getRecommendedProjects, getProjects, Profile as ApiProfile } from '@/services/api';
+import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, signInWithEmail, signUpWithEmail, signInWithGoogle, signOut, checkProfileExists } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [justSignedUp, setJustSignedUp] = useState(false);
-  
-  // Dashboard data
-  const [profile, setProfile] = useState<any>(null);
-  const [stats, setStats] = useState({
-    projectsCreated: 0,
-    projectsJoined: 0,
-    matchesFound: 0,
-  });
-  const [openProjects, setOpenProjects] = useState<any[]>([]);
-  const [closedProjects, setClosedProjects] = useState<any[]>([]);
+  const { user, signOut, checkProfileExists } = useAuth();
+  const [profile, setProfile] = useState<ApiProfile | null>(null);
   const [recommendedProjects, setRecommendedProjects] = useState<any[]>([]);
-  const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Check if user has a profile ONLY after signup
+  // Load user profile and recommended projects
   useEffect(() => {
-    const checkProfile = async () => {
-      if (user && justSignedUp) {
-        const { exists } = await checkProfileExists(user.id);
-        
-        if (!exists) {
-          // Redirect to profile creation only for new signups
-          router.push('/create-profile');
-        }
-        setJustSignedUp(false);
-      }
-    };
-
-    checkProfile();
-  }, [user, justSignedUp]);
-
-  // Load dashboard data
-  useEffect(() => {
-    if (user) {
-      loadDashboard();
-    }
+    loadData();
   }, [user]);
 
-  const updateProjectStatus = async (projectId: string, newStatus: string, ownerId: string) => {
-    try {
-      console.log(`Updating project ${projectId} status to ${newStatus}`);
-      
-      const response = await fetch(`${API_URL}/project/${projectId}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          status: newStatus,
-          owner_id: ownerId,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to update project status');
-      }
-
-      // Refresh the dashboard
-      await loadDashboard();
-      
-      console.log('Project status updated successfully');
-    } catch (err: any) {
-      console.error('Error updating project status:', err);
-      setError(`Failed to update project: ${err.message}`);
-    }
-  };
-
-  const loadDashboard = async () => {
+  const loadData = async () => {
     if (!user) return;
-    
-    setLoadingDashboard(true);
+
     try {
-      // Load profile
+      // Check if profile exists
       const { exists, profile: userProfile } = await checkProfileExists(user.id);
-      if (exists && userProfile) {
-        setProfile(userProfile);
+      
+      if (!exists) {
+        router.replace('/create-profile');
+        return;
       }
 
-      // Load user's projects from backend
-      const projectsResponse = await fetch(`${API_URL}/projects?limit=50`);
-      if (projectsResponse.ok) {
-        const data = await projectsResponse.json();
-        const allProjects = data.projects || [];
-        
-        // Filter projects created by this user
-        const userProjects = allProjects.filter((p: any) => p.owner_id === userProfile?.id);
-        
-        // Separate into open and closed
-        const open = userProjects.filter((p: any) => p.status === 'open');
-        const closed = userProjects.filter((p: any) => p.status === 'closed');
-        
-        setOpenProjects(open);
-        setClosedProjects(closed);
-        
-        // Calculate stats
-        setStats({
-          projectsCreated: userProjects.length,
-          projectsJoined: 0,  // You can track this in the database
-          matchesFound: allProjects.length - userProjects.length,
-        });
-      }
+      setProfile(userProfile);
 
-      // Load recommended projects based on profile
+      // Load recommended projects
       if (userProfile?.id) {
-        try {
-          console.log('Fetching recommended projects for profile:', userProfile.id);
-          const recommendedResponse = await fetch(`${API_URL}/recommended-projects/${userProfile.id}?limit=6`);
-          if (recommendedResponse.ok) {
-            const recommendedData = await recommendedResponse.json();
-            console.log('Recommended projects response:', recommendedData);
-            const projects = recommendedData.recommended_projects || [];
-            // Filter out any projects with missing IDs
-            const validProjects = projects.filter((p: any) => p && p.id);
-            console.log('Valid recommended projects:', validProjects.length);
-            // Log similarity scores for debugging
-            validProjects.forEach((p: any, idx: number) => {
-              console.log(`Project ${idx + 1}: ${p.title} - Similarity: ${p.similarity}`);
-            });
-            setRecommendedProjects(validProjects);
-          } else {
-            console.error('Failed to fetch recommended projects:', recommendedResponse.status);
-          }
-        } catch (err) {
-          console.error('Error loading recommended projects:', err);
-          // Don't fail the whole dashboard if recommendations fail
+        const result = await getRecommendedProjects(userProfile.id, 10);
+        if (result.data) {
+          setRecommendedProjects(result.data);
+        }
+      } else {
+        // Fallback: load all open projects
+        const result = await getProjects({ status: 'open', limit: 10 });
+        if (result.data) {
+          setRecommendedProjects(result.data);
         }
       }
     } catch (error) {
-      console.error('Error loading dashboard:', error);
-    } finally {
-      setLoadingDashboard(false);
-    }
-  };
-
-  const handleAuth = async () => {
-    try {
-      setError('');
-      setLoading(true);
-      if (isSignUp) {
-        await signUpWithEmail(email, password);
-        setJustSignedUp(true);
-        alert('Success! Creating your account...');
-      } else {
-        await signInWithEmail(email, password);
-        setJustSignedUp(false);
-      }
-    } catch (err: any) {
-      setError(err.message || 'Authentication failed');
+      console.error('Error loading data:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    try {
-      setError('');
-      await signInWithGoogle();
-    } catch (err: any) {
-      setError(err.message || 'Google sign-in failed');
-    }
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadData();
   };
 
-  // Logged in view with dashboard
-  if (user) {
+  const handleLogout = async () => {
+    await signOut();
+    router.replace('/landing');
+  };
+
+  if (loading) {
     return (
-      <ScrollView style={styles.container}>
-        <View style={styles.content}>
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <ThemedText style={styles.greeting}>Welcome back! 👋</ThemedText>
-              <ThemedText style={styles.name}>
-                {profile ? `${profile.first_name} ${profile.last_name}` : user.email}
-              </ThemedText>
-            </View>
-            <TouchableOpacity 
-              style={styles.profileButton}
-              onPress={() => router.push('/profile')}
-            >
-              {profile?.profile_picture_url ? (
-                <Image 
-                  source={{ uri: profile.profile_picture_url }} 
-                  style={styles.profileImage}
-                />
-              ) : (
-                <ThemedText style={styles.profileInitial}>
-                  {profile ? profile.first_name[0] : '👤'}
-                </ThemedText>
-              )}
-            </TouchableOpacity>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#10B981" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.mainContainer}>
+      {/* Custom Header with Profile Button */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>collabb</Text>
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => router.push('/(tabs)/profile')}
+          activeOpacity={0.7}
+        >
+          {profile?.profile_picture_url ? (
+            <Image
+              source={{ uri: profile.profile_picture_url }}
+              style={styles.profileImage}
+            />
+          ) : (
+            <IconSymbol size={24} name="person.fill" color="#065f46" />
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />
+        }
+      >
+      {/* Hero Section */}
+      <View style={styles.hero}>
+        <Text style={styles.heroTitle}>✨ Find the best match for your project</Text>
+        <Text style={styles.heroSubtitle}>
+          Our algorithm connects you with peers who share your interests and complement your skills.
+        </Text>
+        <TouchableOpacity
+          style={styles.heroButton}
+          onPress={() => router.push('/(tabs)/explore')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.heroButtonText}>Discover Matches →</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Recommended Projects */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Recommended Projects</Text>
+        
+        {recommendedProjects.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No projects yet. Be the first to create one!</Text>
           </View>
-
-          {/* Stats Cards */}
-          <View style={styles.statsContainer}>
-            <View style={styles.statCard}>
-              <ThemedText style={styles.statNumber}>{stats.projectsCreated}</ThemedText>
-              <ThemedText style={styles.statLabel}>Projects Created</ThemedText>
-            </View>
-            <View style={styles.statCard}>
-              <ThemedText style={styles.statNumber}>{stats.matchesFound}</ThemedText>
-              <ThemedText style={styles.statLabel}>Available Projects</ThemedText>
-            </View>
-            <View style={styles.statCard}>
-              <ThemedText style={styles.statNumber}>{openProjects.length}</ThemedText>
-              <ThemedText style={styles.statLabel}>Active Projects</ThemedText>
-            </View>
-          </View>
-
-          {/* Quick Actions */}
-          <View style={styles.section}>
-            <ThemedText style={styles.sectionTitle}>Quick Actions</ThemedText>
-            
-            <View style={styles.actionsGrid}>
-              <TouchableOpacity 
-                style={styles.actionCard}
-                onPress={() => router.push('/post')}
+        ) : (
+          <View style={styles.projectGrid}>
+            {recommendedProjects.map((project) => (
+              <TouchableOpacity
+                key={project.id}
+                style={styles.projectCard}
+                activeOpacity={0.7}
+                onPress={() => {
+                  router.push({
+                    pathname: '/project-detail',
+                    params: { projectData: JSON.stringify(project) },
+                  });
+                }}
               >
-                <View style={[styles.actionIcon, { backgroundColor: Colors.primaryLight }]}>
-                  <ThemedText style={styles.actionEmoji}>💡</ThemedText>
-                </View>
-                <ThemedText style={styles.actionTitle}>Post Project</ThemedText>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.actionCard}
-                onPress={() => router.push('/explore')}
-              >
-                <View style={[styles.actionIcon, { backgroundColor: Colors.accentLight }]}>
-                  <ThemedText style={styles.actionEmoji}>🔍</ThemedText>
-                </View>
-                <ThemedText style={styles.actionTitle}>Explore</ThemedText>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.actionCard}
-                onPress={() => router.push('/profile')}
-              >
-                <View style={[styles.actionIcon, { backgroundColor: Colors.info }]}>
-                  <ThemedText style={styles.actionEmoji}>👤</ThemedText>
-                </View>
-                <ThemedText style={styles.actionTitle}>Profile</ThemedText>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Recommended Projects */}
-          {recommendedProjects.length > 0 && (
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <ThemedText style={styles.sectionTitle}>Recommended For You</ThemedText>
-                <TouchableOpacity onPress={() => router.push('/explore')}>
-                  <ThemedText style={styles.seeAll}>See All</ThemedText>
-                </TouchableOpacity>
-              </View>
-              
-              {loadingDashboard ? (
-                <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 20 }} />
-              ) : (
-                recommendedProjects.slice(0, 3).map((project) => (
-                  <TouchableOpacity 
-                    key={project.id}
-                    style={styles.projectCard}
-                    onPress={() => router.push(`/project/${project.id}`)}
-                  >
-                    {/* Project Image */}
+                <View style={styles.projectCardContent}>
+                  <View style={styles.projectThumbnail}>
                     {project.project_image_url ? (
-                      <Image 
-                        source={{ uri: project.project_image_url }} 
-                        style={styles.projectImage}
-                        resizeMode="cover"
+                      <Image
+                        source={{ uri: project.project_image_url }}
+                        style={styles.thumbnailImage}
                       />
                     ) : (
-                      <View style={styles.projectImagePlaceholder}>
-                        <ThemedText style={styles.projectImageEmoji}>💡</ThemedText>
-                      </View>
+                      <Text style={styles.thumbnailText}>📁</Text>
                     )}
-                    
-                    <View style={styles.projectHeader}>
-                      <ThemedText style={styles.projectTitle} numberOfLines={1}>
-                        {project.title}
-                      </ThemedText>
-                      <View style={styles.statusActions}>
-                        <View style={[styles.statusBadge, { backgroundColor: Colors.status.open }]}>
-                          <ThemedText style={styles.statusText}>OPEN</ThemedText>
-                        </View>
-                        {project.similarity !== undefined && (
-                          <View style={[styles.statusBadge, { backgroundColor: Colors.accent, marginLeft: 4 }]}>
-                            <ThemedText style={styles.statusText}>
-                              ⭐ {Math.round(project.similarity * 100)}% Match
-                            </ThemedText>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                    <ThemedText style={styles.projectDescription} numberOfLines={2}>
-                      {project.description}
-                    </ThemedText>
+                  </View>
+                  <View style={styles.projectInfo}>
+                    <Text style={styles.projectTitle}>{project.title}</Text>
+                    {project.owner_id && (
+                      <Text style={styles.projectOwner}>by {project.owner_id.substring(0, 8)}...</Text>
+                    )}
                     {project.tags && project.tags.length > 0 && (
-                      <View style={styles.tagsContainer}>
+                      <View style={styles.tagContainer}>
                         {project.tags.slice(0, 3).map((tag: string, index: number) => (
                           <View key={index} style={styles.tag}>
-                            <ThemedText style={styles.tagText}>{tag}</ThemedText>
+                            <Text style={styles.tagText}>{tag}</Text>
                           </View>
                         ))}
                       </View>
                     )}
-                  </TouchableOpacity>
-                ))
-              )}
-            </View>
-          )}
-
-          {/* Open Projects */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <ThemedText style={styles.sectionTitle}>Your Open Projects</ThemedText>
-              <TouchableOpacity onPress={() => router.push('/post')}>
-                <ThemedText style={styles.seeAll}>+ New</ThemedText>
+                    {project.description && (
+                      <Text style={styles.projectDescription} numberOfLines={2}>
+                        {project.description}
+                      </Text>
+                    )}
+                    {project.similarity_score && (
+                      <Text style={styles.matchScore}>
+                        {Math.round(project.similarity_score * 100)}% Match
+                      </Text>
+                    )}
+                  </View>
+                </View>
               </TouchableOpacity>
-            </View>
-            
-            {loadingDashboard ? (
-              <ActivityIndicator size="small" color={Colors.primary} style={{ marginTop: 20 }} />
-            ) : openProjects.length > 0 ? (
-              openProjects.map((project) => {
-                if (!project || !project.id) return null;
-                return (
-                <TouchableOpacity 
-                  key={project.id}
-                  style={styles.projectCard}
-                  onPress={() => router.push(`/project/${project.id}`)}
-                >
-                  {/* Project Image */}
-                  {project.project_image_url ? (
-                    <Image 
-                      source={{ uri: project.project_image_url }} 
-                      style={styles.projectImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.projectImagePlaceholder}>
-                      <ThemedText style={styles.projectImageEmoji}>💀</ThemedText>
-                    </View>
-                  )}
-                  
-                  <View style={styles.projectHeader}>
-                    <ThemedText style={styles.projectTitle} numberOfLines={1}>
-                      {project.title}
-                    </ThemedText>
-                    <View style={styles.statusActions}>
-                      <View style={[styles.statusBadge, { backgroundColor: Colors.status.open }]}>
-                        <ThemedText style={styles.statusText}>OPEN</ThemedText>
-                      </View>
-                      <TouchableOpacity
-                        style={styles.closeButton}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          updateProjectStatus(project.id, 'closed', profile?.id);
-                        }}
-                      >
-                        <ThemedText style={styles.closeButtonText}>Close</ThemedText>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <ThemedText style={styles.projectDescription} numberOfLines={2}>
-                    {project.description}
-                  </ThemedText>
-                  {project.tags && project.tags.length > 0 && (
-                    <View style={styles.tagsContainer}>
-                      {project.tags.slice(0, 3).map((tag: string, index: number) => (
-                        <View key={index} style={styles.tag}>
-                          <ThemedText style={styles.tagText}>{tag}</ThemedText>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </TouchableOpacity>
-                );
-              })
-            ) : (
-              <View style={styles.emptyState}>
-                <ThemedText style={styles.emptyText}>No open projects</ThemedText>
-                <ThemedText style={styles.emptySubtext}>Post your first project idea!</ThemedText>
-              </View>
-            )}
+            ))}
           </View>
-
-          {/* Closed Projects */}
-          {closedProjects.length > 0 && (
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <ThemedText style={styles.sectionTitle}>Completed Projects</ThemedText>
-                <ThemedText style={styles.completedCount}>({closedProjects.length})</ThemedText>
-              </View>
-              
-              {closedProjects.slice(0, 3).map((project) => {
-                if (!project || !project.id) return null;
-                return (
-                <TouchableOpacity 
-                  key={project.id}
-                  style={[styles.projectCard, styles.closedProjectCard]}
-                  onPress={() => router.push(`/project/${project.id}`)}
-                >
-                  {/* Project Image */}
-                  {project.project_image_url ? (
-                    <Image 
-                      source={{ uri: project.project_image_url }} 
-                      style={styles.projectImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={styles.projectImagePlaceholder}>
-                      <ThemedText style={styles.projectImageEmoji}>💀</ThemedText>
-                    </View>
-                  )}
-                  
-                  <View style={styles.projectHeader}>
-                    <ThemedText style={styles.projectTitle} numberOfLines={1}>
-                      {project.title}
-                    </ThemedText>
-                    <View style={styles.statusActions}>
-                      <View style={[styles.statusBadge, { backgroundColor: Colors.status.closed }]}>
-                        <ThemedText style={styles.statusText}>CLOSED</ThemedText>
-                      </View>
-                      <TouchableOpacity
-                        style={styles.reopenButton}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          updateProjectStatus(project.id, 'open', profile?.id);
-                        }}
-                      >
-                        <ThemedText style={styles.reopenButtonText}>Reopen</ThemedText>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <ThemedText style={styles.projectDescription} numberOfLines={1}>
-                    {project.description}
-                  </ThemedText>
-                </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-
-          {/* Sign Out Button */}
-          <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
-            <ThemedText style={styles.signOutText}>Sign Out</ThemedText>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    );
-  }
-
-  // Login/Signup view
-  return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        {/* Hero Section */}
-        <View style={styles.hero}>
-          <View style={styles.heroGradient}>
-            <ThemedText style={styles.heroTitle}>Project Jekyll & Hyde</ThemedText>
-            <ThemedText style={styles.heroSubtitle}>
-              Where brilliant minds meet ambitious projects
-            </ThemedText>
-          </View>
-        </View>
-
-        {/* Features */}
-        <View style={styles.featuresSection}>
-          <View style={styles.featureCard}>
-            <View style={[styles.featureIcon, { backgroundColor: Colors.primaryLight }]}>
-              <ThemedText style={styles.featureEmoji}>🤖</ThemedText>
-            </View>
-            <ThemedText style={styles.featureTitle}>AI-Powered Matching</ThemedText>
-            <ThemedText style={styles.featureText}>
-              Find teammates with complementary skills, not duplicates
-            </ThemedText>
-          </View>
-
-          <View style={styles.featureCard}>
-            <View style={[styles.featureIcon, { backgroundColor: Colors.accentLight }]}>
-              <ThemedText style={styles.featureEmoji}>🗺️</ThemedText>
-            </View>
-            <ThemedText style={styles.featureTitle}>Smart Roadmaps</ThemedText>
-            <ThemedText style={styles.featureText}>
-              Get AI-generated technical roadmaps for your projects
-            </ThemedText>
-          </View>
-
-          <View style={styles.featureCard}>
-            <View style={[styles.featureIcon, { backgroundColor: Colors.info }]}>
-              <ThemedText style={styles.featureEmoji}>⚡</ThemedText>
-            </View>
-            <ThemedText style={styles.featureTitle}>Quick & Easy</ThemedText>
-            <ThemedText style={styles.featureText}>
-              Create your profile and start collaborating in minutes
-            </ThemedText>
-          </View>
-        </View>
-
-        {/* Auth Form */}
-        <View style={styles.authCard}>
-          <ThemedText style={styles.authTitle}>
-            {isSignUp ? 'Create Account' : 'Welcome Back'}
-          </ThemedText>
-
-          <View style={styles.inputContainer}>
-            <ThemedText style={styles.inputLabel}>Email</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="you@example.com"
-              placeholderTextColor={Colors.text.tertiary}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <ThemedText style={styles.inputLabel}>Password</ThemedText>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              placeholderTextColor={Colors.text.tertiary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-          </View>
-
-          {error ? (
-            <View style={styles.errorContainer}>
-              <ThemedText style={styles.errorText}>{error}</ThemedText>
-            </View>
-          ) : null}
-
-          <TouchableOpacity 
-            style={styles.primaryButton} 
-            onPress={handleAuth}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color={Colors.text.inverse} />
-            ) : (
-              <ThemedText style={styles.primaryButtonText}>
-                {isSignUp ? 'Sign Up' : 'Sign In'}
-              </ThemedText>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.secondaryButton} 
-            onPress={handleGoogleSignIn}
-          >
-            <ThemedText style={styles.secondaryButtonText}>
-              Continue with Google
-            </ThemedText>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)}>
-            <ThemedText style={styles.switchText}>
-              {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-            </ThemedText>
-          </TouchableOpacity>
-        </View>
+        )}
       </View>
-    </ScrollView>
+        
+        {/* Logout Button */}
+        <TouchableOpacity 
+          style={styles.logoutButton}
+          onPress={handleLogout}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.logoutText}>Log Out</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  mainContainer: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: '#e6f7ed',
   },
-  content: {
-    flex: 1,
-    padding: 20,
-    paddingBottom: 40,
-  },
-  
-  // Header (logged in)
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
-    marginTop: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#e6f7ed',
+    borderBottomWidth: 2,
+    borderBottomColor: '#a7f3d0',
   },
-  greeting: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    marginBottom: 4,
-  },
-  name: {
+  headerTitle: {
     fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.text.primary,
+    fontWeight: '900',
+    color: '#10B981',
+    letterSpacing: -1,
   },
   profileButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.primary,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#a7f3d0',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  profileInitial: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: Colors.text.inverse,
+    borderWidth: 2,
+    borderColor: '#fff',
+    overflow: 'hidden',
   },
   profileImage: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
-  completedCount: {
-    fontSize: 16,
-    color: Colors.text.tertiary,
-    fontWeight: '500',
-  },
-  
-  // Stats Cards
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 32,
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  statNumber: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: Colors.primary,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: Colors.text.secondary,
-    textAlign: 'center',
-  },
-  
-  // Sections
-  section: {
-    marginBottom: 32,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: Colors.text.primary,
-  },
-  
-  // Project Cards
-  projectCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 0,
-    marginBottom: 16,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
-    overflow: 'hidden',
-    maxWidth: 500,
-    alignSelf: 'center',
-    width: '100%',
-  },
-  closedProjectCard: {
-    opacity: 0.8,
-  },
-  projectImage: {
-    width: '100%',
-    height: 140,
-  },
-  projectImagePlaceholder: {
-    width: '100%',
-    height: 140,
-    backgroundColor: Colors.surfaceLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  projectImageEmoji: {
-    fontSize: 48,
-    opacity: 0.6,
-  },
-  projectHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    paddingBottom: 8,
-  },
-  projectTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    flex: 1,
-    marginRight: 12,
-  },
-  statusActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  statusText: {
-    color: Colors.text.inverse,
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  closeButton: {
-    backgroundColor: Colors.error,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  closeButtonText: {
-    color: Colors.text.inverse,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  reopenButton: {
-    backgroundColor: Colors.success,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  reopenButtonText: {
-    color: Colors.text.inverse,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  projectDescription: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    lineHeight: 20,
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-  },
-  tag: {
-    backgroundColor: Colors.backgroundSecondary,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
-  },
-  tagText: {
-    fontSize: 12,
-    color: Colors.text.secondary,
-    fontWeight: '500',
-  },
-  completedCount: {
-    fontSize: 16,
-    color: Colors.text.tertiary,
-    fontWeight: '500',
-  },
-  seeAll: {
-    fontSize: 14,
-    color: Colors.primary,
-    fontWeight: '500',
-  },
-  
-  // Actions Grid
-  actionsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  actionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  actionEmoji: {
-    fontSize: 28,
-  },
-  actionTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: Colors.text.primary,
-    textAlign: 'center',
-  },
-  
-  // Project Grid & Tiles
-  projectsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    justifyContent: 'flex-start',
-  },
-  projectTile: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    width: windowWidth > 768 ? (windowWidth - 100) / 4 : windowWidth > 480 ? (windowWidth - 80) / 3 : (windowWidth - 70) / 2,
-    aspectRatio: 1,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  closedTile: {
-    opacity: 0.8,
-  },
-  tileImage: {
     width: '100%',
     height: '100%',
-    position: 'absolute',
+    borderRadius: 22,
   },
-  tileImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: Colors.surfaceLight,
+  container: {
+    flex: 1,
+  },
+  content: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    position: 'absolute',
+    backgroundColor: '#e6f7ed',
   },
-  tileImageEmoji: {
-    fontSize: 40,
-    opacity: 0.6,
-  },
-  tileTitleContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
-    padding: 8,
-  },
-  tileTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    lineHeight: 15,
-  },
-  tileStatusBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  tileStatusText: {
-    color: Colors.text.inverse,
-    fontSize: 9,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  tileActions: {
-    position: 'absolute',
-    top: 6,
-    left: 6,
-  },
-  tileCloseButton: {
-    backgroundColor: Colors.error,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tileReopenButton: {
-    backgroundColor: Colors.success,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  tileActionText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.text.inverse,
-    lineHeight: 16,
-  },
-  completedCount: {
-    fontSize: 16,
-    color: Colors.text.tertiary,
-    fontWeight: '500',
-  },
-  
-  // Empty State
-  emptyState: {
-    alignItems: 'center',
-    padding: 32,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: Colors.text.secondary,
-    marginBottom: 4,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: Colors.text.tertiary,
-  },
-  
-  // Hero Section (not logged in)
   hero: {
-    marginBottom: 32,
-    marginTop: 8,
-  },
-  heroGradient: {
-    backgroundColor: Colors.primary,
-    borderRadius: 24,
-    padding: 32,
-    alignItems: 'center',
+    backgroundColor: '#10B981',
+    borderRadius: 32,
+    padding: 40,
+    marginBottom: 48,
   },
   heroTitle: {
     fontSize: 32,
-    fontWeight: 'bold',
-    color: Colors.text.inverse,
-    marginBottom: 8,
-    textAlign: 'center',
+    fontWeight: '900',
+    color: '#fff',
+    marginBottom: 16,
+    letterSpacing: -1,
   },
   heroSubtitle: {
-    fontSize: 16,
-    color: Colors.text.inverse,
-    textAlign: 'center',
-    opacity: 0.9,
-  },
-  
-  // Features
-  featuresSection: {
+    fontSize: 18,
+    color: '#d1fae5',
     marginBottom: 32,
-    gap: 16,
+    lineHeight: 28,
+    fontWeight: '500',
   },
-  featureCard: {
-    backgroundColor: Colors.surface,
+  heroButton: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 32,
+    paddingVertical: 16,
     borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 1,
-    shadowRadius: 8,
-    elevation: 2,
+    alignSelf: 'flex-start',
   },
-  featureIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  heroButtonText: {
+    color: '#059669',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  section: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#1c1917',
+    marginBottom: 24,
+    letterSpacing: -1,
+  },
+  emptyState: {
+    backgroundColor: 'rgba(255, 255, 255, 0.6)',
+    borderRadius: 24,
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#78716c',
+    fontWeight: '500',
+  },
+  projectGrid: {
+    gap: 16,
+  },
+  projectCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 24,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: 'rgba(167, 243, 208, 0.5)',
+  },
+  projectCardContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  projectThumbnail: {
+    width: 60,
+    height: 60,
+    borderRadius: 16,
+    backgroundColor: '#d1fae5',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: '#10B981',
   },
-  featureEmoji: {
+  thumbnailText: {
     fontSize: 28,
   },
-  featureTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.text.primary,
-    marginBottom: 4,
+  thumbnailImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 14,
+  },
+  projectInfo: {
     flex: 1,
   },
-  featureText: {
-    fontSize: 14,
-    color: Colors.text.secondary,
-    lineHeight: 20,
-    flex: 1,
-  },
-  
-  // Auth Form
-  authCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: Colors.shadow,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 1,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  authTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Colors.text.primary,
-    marginBottom: 24,
-    textAlign: 'center',
-  },
-  inputContainer: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: Colors.text.secondary,
+  projectTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1c1917',
     marginBottom: 8,
+    letterSpacing: -0.5,
   },
-  input: {
-    backgroundColor: Colors.background,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    color: Colors.text.primary,
-    borderWidth: 1,
-    borderColor: Colors.border.light,
-  },
-  errorContainer: {
-    backgroundColor: Colors.error,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  errorText: {
-    color: Colors.text.inverse,
+  projectOwner: {
     fontSize: 14,
-    textAlign: 'center',
+    fontWeight: '500',
+    color: '#78716c',
+    marginBottom: 24,
   },
-  primaryButton: {
-    backgroundColor: Colors.accent,
+  tagContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 24,
+  },
+  tag: {
+    backgroundColor: '#d1fae5',
     borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  primaryButtonText: {
-    color: Colors.text.inverse,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    backgroundColor: Colors.background,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderWidth: 1,
-    borderColor: Colors.border.medium,
-    marginBottom: 16,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
-  secondaryButtonText: {
-    color: Colors.text.primary,
+  tagText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#065f46',
+  },
+  projectDescription: {
     fontSize: 16,
+    color: '#57534e',
+    lineHeight: 24,
     fontWeight: '500',
   },
-  switchText: {
-    color: Colors.primary,
-    fontSize: 14,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  
-  // Sign Out Button
-  signOutButton: {
-    backgroundColor: Colors.background,
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border.medium,
+  matchScore: {
     marginTop: 16,
-  },
-  signOutText: {
-    color: Colors.text.secondary,
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '700',
+    color: '#10B981',
+  },
+  logoutButton: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 32,
+    alignItems: 'center',
+  },
+  logoutText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#dc2626',
   },
 });
