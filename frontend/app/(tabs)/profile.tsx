@@ -123,8 +123,8 @@ export default function ProfileTabScreen() {
       setLinkedinUrl(userProfile.urls?.linkedin || '');
       setProfileImage(userProfile.profile_picture_url || null);
 
-      // Load user's projects
-      const result = await getProjects({ limit: 50 });
+      // Load user's projects (both open and closed)
+      const result = await getProjects({ status: '', limit: 50 });
       if (result.data) {
         const myProjects = result.data.filter((p: any) => p.owner_id === userProfile.id);
         setUserProjects(myProjects);

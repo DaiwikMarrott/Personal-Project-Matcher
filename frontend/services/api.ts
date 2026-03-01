@@ -276,7 +276,8 @@ export async function getProjects(filters?: {
 }): Promise<ApiResponse<Project[]>> {
   try {
     const params = new URLSearchParams();
-    if (filters?.status) params.append('project_status', filters.status); // Note: backend uses project_status
+    // Always add status parameter if provided (even if empty string)
+    if (filters?.status !== undefined) params.append('project_status', filters.status);
     if (filters?.owner_id) params.append('owner_id', filters.owner_id);
     if (filters?.tag) params.append('tag', filters.tag);
     if (filters?.search) params.append('search', filters.search);
@@ -284,7 +285,14 @@ export async function getProjects(filters?: {
     if (filters?.offset) params.append('offset', filters.offset.toString());
 
     const url = `${API_BASE_URL}/projects${params.toString() ? '?' + params.toString() : ''}`;
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+      },
+      cache: 'no-store',
+    });
     
     if (!response.ok) {
       const error = await response.json();
@@ -304,7 +312,14 @@ export async function getProjects(filters?: {
  */
 export async function getRecommendedProjects(profileId: string, limit: number = 10): Promise<ApiResponse<Project[]>> {
   try {
-    const response = await fetch(`${API_BASE_URL}/recommended-projects/${profileId}?limit=${limit}`);
+    const response = await fetch(`${API_BASE_URL}/recommended-projects/${profileId}?limit=${limit}`, {
+      method: 'GET',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+      },
+      cache: 'no-store',
+    });
     
     if (!response.ok) {
       const error = await response.json();

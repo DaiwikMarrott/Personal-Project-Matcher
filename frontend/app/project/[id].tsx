@@ -15,6 +15,7 @@ import {
   Alert,
   TextInput,
   Animated,
+  Switch,
 } from 'react-native';
 const drJekyllIcon = require('@/assets/images/dr-jekyll-icon.png');
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -54,6 +55,7 @@ export default function ProjectDetailScreen() {
   const [applying, setApplying] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
   
   // Editable fields
   const [editedTitle, setEditedTitle] = useState('');
@@ -288,6 +290,45 @@ export default function ProjectDetailScreen() {
     }
   };
 
+  const handleToggleStatus = async () => {
+    if (!project || statusUpdating) return;
+    
+    const newStatus = project.status === 'open' ? 'closed' : 'open';
+    const previousStatus = project.status;
+    
+    // Optimistic update - update UI immediately
+    setProject({ ...project, status: newStatus });
+    setStatusUpdating(true);
+    
+    try {
+      const response = await fetch(`${API_URL}/project/${project.id}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          status: newStatus,
+          owner_id: project.owner_id 
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to update project status');
+      }
+
+      const data = await response.json();
+      setProject(data);
+    } catch (error: any) {
+      console.error('Status update error:', error);
+      // Revert to previous status on error
+      setProject({ ...project, status: previousStatus });
+      Alert.alert('Error', error.message || 'Failed to update project status');
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
   const pickImage = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
     
@@ -423,13 +464,29 @@ export default function ProjectDetailScreen() {
           ) : (
             <Text style={styles.title}>{project.title}</Text>
           )}
-          <View style={[styles.statusBadge, { 
-            backgroundColor: project.status === 'open' ? Colors.status.open : Colors.status.closed 
-          }]}>
-            <Text style={styles.statusText}>
-              {project.status === 'open' ? 'OPEN' : 'CLOSED'}
-            </Text>
-          </View>
+          {isOwner ? (
+            <View style={styles.statusSwitchContainer}>
+              <Text style={[styles.statusLabel, project.status === 'closed' && styles.statusLabelInactive]}>
+                {project.status === 'open' ? 'Open' : 'Closed'}
+              </Text>
+              <Switch
+                value={project.status === 'open'}
+                onValueChange={handleToggleStatus}
+                disabled={statusUpdating}
+                trackColor={{ false: '#767577', true: '#10b981' }}
+                thumbColor={project.status === 'open' ? '#059669' : '#f4f3f4'}
+                ios_backgroundColor="#767577"
+              />
+            </View>
+          ) : (
+            <View style={[styles.statusBadge, { 
+              backgroundColor: project.status === 'open' ? Colors.status.open : Colors.status.closed 
+            }]}>
+              <Text style={styles.statusText}>
+                {project.status === 'open' ? 'OPEN' : 'CLOSED'}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Description */}
@@ -674,6 +731,19 @@ const styles = StyleSheet.create({
     color: Colors.text.inverse,
     fontSize: 12,
     fontWeight: '600',
+  },
+  statusSwitchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#10b981',
+  },
+  statusLabelInactive: {
+    color: '#ef4444',
   },
   section: {
     marginBottom: 28,

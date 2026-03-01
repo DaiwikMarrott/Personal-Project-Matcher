@@ -13,6 +13,7 @@ import {
   TextInput,
   Alert,
   Animated,
+  Switch,
 } from 'react-native';
 const drJekyllIcon = require('@/assets/images/dr-jekyll-icon.png');
 import { useState, useEffect, useRef } from 'react';
@@ -53,6 +54,7 @@ export default function ProjectDetailScreen() {
   const [expressedInterest, setExpressedInterest] = useState(false);
   const [expressingInterest, setExpressingInterest] = useState(false);
   const [isDenied, setIsDenied] = useState(false);
+  const [deletingProject, setDeletingProject] = useState(false);
 
   // Animation refs for Jekyll icon
   const talkingAnimation = useRef(new Animated.Value(0)).current;
@@ -128,6 +130,9 @@ export default function ProjectDetailScreen() {
       // For now, we'll reconstruct from passed params
       if (params.projectData && typeof params.projectData === 'string') {
         const projectData = JSON.parse(params.projectData);
+        console.log('[ProjectDetail] Loaded project data:', projectData);
+        console.log('[ProjectDetail] Project has owner_id:', projectData.owner_id);
+        
         setProject(projectData);
         setEditedDescription(projectData.description || '');
         
@@ -149,6 +154,8 @@ export default function ProjectDetailScreen() {
         } else {
           console.log('[ProjectDetail] No user logged in');
         }
+      } else {
+        console.error('[ProjectDetail] No project data in params');
       }
     } catch (error) {
       console.error('Error loading project:', error);
@@ -248,29 +255,77 @@ export default function ProjectDetailScreen() {
   };
 
   const handleDeleteProject = async () => {
-    if (!project) return;
+    if (!project) {
+      Alert.alert('Error', 'Project data not loaded');
+      console.error('[Delete] No project data available');
+      return;
+    }
+    
+    if (!project.owner_id) {
+      Alert.alert('Error', 'Cannot delete: Missing owner information');
+      console.error('[Delete] Missing owner_id. Project data:', JSON.stringify(project, null, 2));
+      return;
+    }
+    
+    if (!project.id) {
+      Alert.alert('Error', 'Cannot delete: Missing project ID');
+      console.error('[Delete] Missing project.id');
+      return;
+    }
+    
+    console.log('[Delete] Project data check:', {
+      id: project.id,
+      owner_id: project.owner_id,
+      title: project.title
+    });
     
     Alert.alert(
       'Delete Project',
-      'Are you sure you want to delete this project? This action cannot be undone.',
+      'Are you sure you want to permanently delete this project? This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            setDeletingProject(true);
             try {
+              console.log('[Delete] Starting delete process...');
+              console.log('[Delete] Project ID:', project.id);
+              console.log('[Delete] Owner ID:', project.owner_id);
+              
               const result = await deleteProject(project.id, project.owner_id);
               
+              console.log('[Delete] API response:', JSON.stringify(result, null, 2));
+              
               if (result.error) {
-                Alert.alert('Error', result.error);
+                console.error('[Delete] API returned error:', result.error);
+                Alert.alert('Delete Failed', result.error);
+              } else if (result.data) {
+                console.log('[Delete] Delete successful!');
+                Alert.alert(
+                  'Success', 
+                  'Project deleted successfully',
+                  [
+                    { 
+                      text: 'OK', 
+                      onPress: () => {
+                        console.log('[Delete] Navigating to profile...');
+                        router.push('/(tabs)/profile');
+                      }
+                    }
+                  ]
+                );
               } else {
-                Alert.alert('Success', 'Project deleted successfully', [
-                  { text: 'OK', onPress: () => router.back() }
-                ]);
+                console.warn('[Delete] Unexpected response format:', result);
+                Alert.alert('Warning', 'Deletion may have succeeded but response was unexpected');
               }
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete project');
+              console.error('[Delete] Exception occurred:', error);
+              console.error('[Delete] Error stack:', error.stack);
+              Alert.alert('Error', error.message || 'Failed to delete project. Please try again.');
+            } finally {
+              setDeletingProject(false);
             }
           }
         }
@@ -324,6 +379,48 @@ export default function ProjectDetailScreen() {
         }
       ]
     );
+  };
+
+  const handleToggleStatusSwitch = async () => {
+    if (!project || statusUpdating) return;
+    
+    const newStatus = project.status === 'open' ? 'closed' : 'open';
+    const previousStatus = project.status;
+    
+    console.log('[ProjectDetail] Switch toggle - current:', project.status, '-> new:', newStatus);
+    
+    // Optimistic update - update UI immediately
+    setProject({ ...project, status: newStatus });
+    setStatusUpdating(true);
+    
+    try {
+      console.log('[ProjectDetail] Calling updateProjectStatus API...');
+      const result = await updateProjectStatus(project.id, newStatus, project.owner_id);
+      
+      console.log('[ProjectDetail] API result:', result);
+      
+      if (result.error) {
+        console.error('[ProjectDetail] Status update failed:', result.error);
+        // Revert to previous status on error
+        setProject({ ...project, status: previousStatus });
+        Alert.alert('Error', result.error);
+      } else {
+        console.log('[ProjectDetail] Status updated successfully, updating local state');
+        // Use backend response data if available
+        if (result.data) {
+          setProject(result.data as ProjectData);
+        } else {
+          setProject({ ...project, status: newStatus });
+        }
+      }
+    } catch (error: any) {
+      console.error('[ProjectDetail] Status update error:', error);
+      // Revert to previous status on error
+      setProject({ ...project, status: previousStatus });
+      Alert.alert('Error', error.message || 'Failed to update project status');
+    } finally {
+      setStatusUpdating(false);
+    }
   };
 
   const handleExpressInterest = async () => {
@@ -542,9 +639,26 @@ export default function ProjectDetailScreen() {
             {project.status && (
               <View style={styles.infoRow}>
                 <Text style={styles.infoLabel}>Status:</Text>
-                <Text style={[styles.infoValue, styles.statusBadge]}>
-                  {project.status}
-                </Text>
+                <View style={styles.statusSwitchContainer}>
+                  <Text style={[styles.statusLabel, project.status === 'closed' && styles.statusLabelInactive]}>
+                    {project.status === 'open' ? 'Open' : 'Closed'}
+                  </Text>
+                  {isOwner && (
+                    <Switch
+                      value={project.status === 'open'}
+                      onValueChange={handleToggleStatusSwitch}
+                      disabled={statusUpdating}
+                      trackColor={{ false: '#767577', true: '#10b981' }}
+                      thumbColor={project.status === 'open' ? '#059669' : '#f4f3f4'}
+                      ios_backgroundColor="#767577"
+                    />
+                  )}
+                  {!isOwner && (
+                    <Text style={[styles.infoValue, styles.statusBadge]}>
+                      {project.status}
+                    </Text>
+                  )}
+                </View>
               </View>
             )}
           </View>
@@ -712,21 +826,14 @@ export default function ProjectDetailScreen() {
         {isOwner ? (
           <View style={styles.ownerActions}>
             <TouchableOpacity 
-              style={[styles.statusButton, statusUpdating && styles.buttonDisabled]} 
-              activeOpacity={0.8}
-              onPress={handleToggleStatus}
-              disabled={statusUpdating}
-            >
-              <Text style={styles.statusButtonText}>
-                {statusUpdating ? '⏳ Updating...' : (project.status === 'open' ? '🔒 Close Project' : '🔓 Reopen Project')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.deleteButton} 
+              style={[styles.deleteButton, deletingProject && styles.buttonDisabled]} 
               activeOpacity={0.8}
               onPress={handleDeleteProject}
+              disabled={deletingProject}
             >
-              <Text style={styles.deleteButtonText}>🗑️ Delete Project</Text>
+              <Text style={styles.deleteButtonText}>
+                {deletingProject ? '⏳ Deleting...' : '🗑️ Delete Project'}
+              </Text>
             </TouchableOpacity>
           </View>
         ) : isDenied ? (
@@ -906,6 +1013,19 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 2,
+  },
+  statusSwitchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  statusLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#10b981',
+  },
+  statusLabelInactive: {
+    color: '#ef4444',
   },
   statusBadgeOpen: {
     backgroundColor: '#d1fae5',
