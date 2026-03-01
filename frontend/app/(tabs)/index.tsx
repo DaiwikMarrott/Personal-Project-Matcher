@@ -71,6 +71,36 @@ export default function HomeScreen() {
     }
   }, [user]);
 
+  const updateProjectStatus = async (projectId: string, newStatus: string, ownerId: string) => {
+    try {
+      console.log(`Updating project ${projectId} status to ${newStatus}`);
+      
+      const response = await fetch(`${API_URL}/project/${projectId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: newStatus,
+          owner_id: ownerId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to update project status');
+      }
+
+      // Refresh the dashboard
+      await loadDashboard();
+      
+      console.log('Project status updated successfully');
+    } catch (err: any) {
+      console.error('Error updating project status:', err);
+      setError(`Failed to update project: ${err.message}`);
+    }
+  };
+
   const loadDashboard = async () => {
     if (!user) return;
     
@@ -245,8 +275,19 @@ export default function HomeScreen() {
                     <ThemedText style={styles.projectTitle} numberOfLines={1}>
                       {project.title}
                     </ThemedText>
-                    <View style={[styles.statusBadge, { backgroundColor: Colors.status.open }]}>
-                      <ThemedText style={styles.statusText}>OPEN</ThemedText>
+                    <View style={styles.statusActions}>
+                      <View style={[styles.statusBadge, { backgroundColor: Colors.status.open }]}>
+                        <ThemedText style={styles.statusText}>OPEN</ThemedText>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.closeButton}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          updateProjectStatus(project.id, 'closed', profile?.id);
+                        }}
+                      >
+                        <ThemedText style={styles.closeButtonText}>Close</ThemedText>
+                      </TouchableOpacity>
                     </View>
                   </View>
                   <ThemedText style={styles.projectDescription} numberOfLines={2}>
@@ -289,8 +330,19 @@ export default function HomeScreen() {
                     <ThemedText style={styles.projectTitle} numberOfLines={1}>
                       {project.title}
                     </ThemedText>
-                    <View style={[styles.statusBadge, { backgroundColor: Colors.status.closed }]}>
-                      <ThemedText style={styles.statusText}>CLOSED</ThemedText>
+                    <View style={styles.statusActions}>
+                      <View style={[styles.statusBadge, { backgroundColor: Colors.status.closed }]}>
+                        <ThemedText style={styles.statusText}>CLOSED</ThemedText>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.reopenButton}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          updateProjectStatus(project.id, 'open', profile?.id);
+                        }}
+                      >
+                        <ThemedText style={styles.reopenButtonText}>Reopen</ThemedText>
+                      </TouchableOpacity>
                     </View>
                   </View>
                   <ThemedText style={styles.projectDescription} numberOfLines={1}>
@@ -607,6 +659,35 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: Colors.text.inverse,
     textTransform: 'capitalize',
+  },
+  statusActions: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  closeButton: {
+    backgroundColor: Colors.error,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  closeButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.text.inverse,
+    textTransform: 'uppercase',
+  },
+  reopenButton: {
+    backgroundColor: Colors.success,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  reopenButtonText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.text.inverse,
+    textTransform: 'uppercase',
   },
   projectDescription: {
     fontSize: 14,

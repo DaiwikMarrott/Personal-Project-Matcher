@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/contexts/AuthContext';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import Colors from '@/constants/colors';
 
 // Use hardcoded URL for web, env variable for native
@@ -27,6 +27,7 @@ interface Project {
 
 export default function ExploreScreen() {
   const { user } = useAuth();
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -81,6 +82,7 @@ export default function ExploreScreen() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
       
+      // Fetch only open projects for the explore page
       const response = await fetch(`${API_URL}/projects?project_status=open&limit=50`, {
         signal: controller.signal,
         headers: {
@@ -157,7 +159,7 @@ export default function ExploreScreen() {
 
         <TouchableOpacity 
           style={styles.createButton}
-          onPress={() => alert('Project creation coming soon!')}
+          onPress={() => router.push('/post')}
         >
           <ThemedText style={styles.createButtonText}>
             ➕ Post Your Project Idea
