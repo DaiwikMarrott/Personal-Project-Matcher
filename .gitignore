@@ -61,3 +61,12 @@ tmp/
 *.db
 *.sqlite
 *.sqlite3
+
+# Large files
+UI_Placeholder/metadata.json
+UI_Placeholder/node_modules/
+UI_Placeholder/dist/
+
+# Build artifacts and cache
+*.lock
+package-lock.json
