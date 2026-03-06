@@ -62,11 +62,19 @@ tmp/
 *.sqlite
 *.sqlite3
 
-# Large files
+# Large files and archives
+Archive.zip
+*.zip
 UI_Placeholder/metadata.json
 UI_Placeholder/node_modules/
 UI_Placeholder/dist/
+*.tar
+*.tar.gz
+*.rar
+*.7z
 
 # Build artifacts and cache
+*.lock
+package-lock.json
 *.lock
 package-lock.json
